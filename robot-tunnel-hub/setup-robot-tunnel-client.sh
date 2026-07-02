@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+#
+# setup-robot-tunnel-client.sh  --  ONE-SHOT setup for a robot (client side).
+#
+# Run this once on the robot (as root):
+#     sudo bash setup-robot-tunnel-client.sh
+#
+# It will:
+#   - install Docker if missing, verify the robot's own sshd is on port 22
+#   - stop/disable any old reverse-tunnel systemd services
+#   - ask for the robot details (tunnel user is ALWAYS robot-tunnel, not asked)
+#   - generate the robot key, install the hub's public key for hub->robot access
+#   - build & (re)create the autossh container that keeps the reverse tunnel up
+#   - print the robot public key to add on the hub via `robot-hub` > add
+#
+set -euo pipefail
+
+# ------------------------------ defaults ------------------------------
+VPS_HOST_DEFAULT="155.212.159.244"
+VPS_SSH_PORT_DEFAULT="2222"
+TUNNEL_USER="robot-tunnel"            # fixed, never asked
+IMAGE="robot-tunnel-client:latest"
+CONTAINER="robot-tunnel-client"
+CDIR="/opt/robot-tunnel-client"
+BUILD="$CDIR/build"
+
+log(){ printf '\033[1;36m[robot]\033[0m %s\n' "$*"; }
+err(){ printf '\033[1;31m[robot] ERROR:\033[0m %s\n' "$*" >&2; }
+ask(){ local p="$1" d="${2:-}" a; if [ -n "$d" ]; then read -rp "$p [$d]: " a; echo "${a:-$d}"; else read -rp "$p: " a; echo "$a"; fi; }
+
+[ "$(id -u)" = "0" ] || { err "Please run as root (sudo)."; exit 1; }
+
+# ------------------------------ robot sshd on :22 ------------------------------
+if command -v ss >/dev/null 2>&1 && ! ss -H -tln 'sport = :22' 2>/dev/null | grep -q .; then
+  log "No sshd on port 22 detected. Installing openssh-server ..."
+  if command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y openssh-server; fi
+  systemctl enable --now ssh 2>/dev/null || systemctl enable --now sshd 2>/dev/null || true
+fi
+
+# ------------------------------ docker ------------------------------
+if ! command -v docker >/dev/null 2>&1; then
+  log "Docker not found. Installing via get.docker.com ..."
+  curl -fsSL https://get.docker.com | sh
+fi
+systemctl enable --now docker 2>/dev/null || true
+command -v ssh-keygen >/dev/null 2>&1 || { apt-get install -y openssh-client 2>/dev/null || true; }
+
+# ------------------------------ kill old services ------------------------------
+if command -v systemctl >/dev/null 2>&1; then
+  for s in robot-reverse-tunnel.service robot-tunnel.service reverse-ssh.service; do
+    systemctl stop "$s" 2>/dev/null || true
+    systemctl disable "$s" 2>/dev/null || true
+  done
+fi
+
+# ------------------------------ ask details ------------------------------
+echo
+log "Enter robot details (tunnel user is always '$TUNNEL_USER', not asked):"
+ROBOT_NAME=$(ask "Robot name")
+ROBOT_SN=$(ask "Robot SN")
+VPS_HOST=$(ask "VPS host/IP" "$VPS_HOST_DEFAULT")
+VPS_SSH_PORT=$(ask "VPS SSH port" "$VPS_SSH_PORT_DEFAULT")
+VPS_PORT=$(ask "VPS reverse port (must match the hub, e.g. 22001)")
+ROBOT_USER=$(ask "Robot SSH/SFTP user (e.g. siasun, root, robot)" "robot")
+NOTES=$(ask "Notes" "")
+
+case "$VPS_PORT" in ''|*[!0-9]*) err "Reverse port must be numeric."; exit 1;; esac
+getent passwd "$ROBOT_USER" >/dev/null || { err "User '$ROBOT_USER' does not exist on this robot."; exit 1; }
+
+# ------------------------------ robot key ------------------------------
+mkdir -p "$CDIR" "$BUILD"
+if [ ! -f "$CDIR/id_ed25519" ]; then
+  log "Generating robot key ..."
+  ssh-keygen -q -t ed25519 -f "$CDIR/id_ed25519" -N "" -C "robot-$ROBOT_NAME"
+fi
+chmod 600 "$CDIR/id_ed25519"
+touch "$CDIR/known_hosts"
+
+# ------------------------------ hub public key -> robot user ------------------------------
+echo
+log "Paste the SERVER public key (hub_to_robot_ed25519.pub) shown by the hub installer."
+log "This lets the hub connect INTO this robot as '$ROBOT_USER' without a password."
+read -rp "Server public key: " SERVER_PUBKEY
+case "$SERVER_PUBKEY" in
+  ssh-*) : ;;
+  *) err "That does not look like an SSH public key (must start with 'ssh-'). Aborting."; exit 1;;
+esac
+HOME_DIR="$(getent passwd "$ROBOT_USER" | cut -d: -f6)"
+GRP="$(id -gn "$ROBOT_USER")"
+install -d -m 700 -o "$ROBOT_USER" -g "$GRP" "$HOME_DIR/.ssh"
+touch "$HOME_DIR/.ssh/authorized_keys"
+grep -qxF "$SERVER_PUBKEY" "$HOME_DIR/.ssh/authorized_keys" || echo "$SERVER_PUBKEY" >> "$HOME_DIR/.ssh/authorized_keys"
+chown "$ROBOT_USER:$GRP" "$HOME_DIR/.ssh/authorized_keys"
+chmod 600 "$HOME_DIR/.ssh/authorized_keys"
+log "Server key installed for user '$ROBOT_USER'."
+
+# ------------------------------ config ------------------------------
+cat > "$CDIR/tunnel.conf" <<CONF
+VPS_HOST=$VPS_HOST
+VPS_SSH_PORT=$VPS_SSH_PORT
+VPS_PORT=$VPS_PORT
+TUNNEL_USER=$TUNNEL_USER
+ROBOT_NAME=$ROBOT_NAME
+ROBOT_SN=$ROBOT_SN
+ROBOT_USER=$ROBOT_USER
+NOTES=$NOTES
+CONF
+
+# ------------------------------ tunnel runner ------------------------------
+cat > "$BUILD/run-tunnel.sh" <<'RUN'
+#!/bin/sh
+set -e
+. /config/tunnel.conf
+# Volume may carry host permissions; ssh refuses a group/world-readable key.
+chmod 600 /config/id_ed25519 2>/dev/null || true
+touch /config/known_hosts
+echo "Starting reverse tunnel: ${TUNNEL_USER}@${VPS_HOST}:${VPS_SSH_PORT}  ->  127.0.0.1:${VPS_PORT} => robot:22"
+exec autossh -M 0 \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -o StrictHostKeyChecking=accept-new \
+  -o UserKnownHostsFile=/config/known_hosts \
+  -o IdentitiesOnly=yes \
+  -i /config/id_ed25519 \
+  -p "${VPS_SSH_PORT}" \
+  -N \
+  -R 127.0.0.1:${VPS_PORT}:127.0.0.1:22 \
+  "${TUNNEL_USER}@${VPS_HOST}"
+RUN
+
+# ------------------------------ Dockerfile ------------------------------
+cat > "$BUILD/Dockerfile" <<'DOCKER'
+FROM debian:stable-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      autossh openssh-client ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+ENV AUTOSSH_GATETIME=0
+COPY run-tunnel.sh /usr/local/bin/run-tunnel.sh
+RUN chmod +x /usr/local/bin/run-tunnel.sh
+ENTRYPOINT ["/usr/local/bin/run-tunnel.sh"]
+DOCKER
+
+# ------------------------------ build & run ------------------------------
+log "Building image $IMAGE ..."
+docker build -t "$IMAGE" "$BUILD"
+
+log "Recreating container $CONTAINER ..."
+docker rm -f "$CONTAINER" 2>/dev/null || true
+docker run -d \
+  --name "$CONTAINER" \
+  --restart unless-stopped \
+  --network host \
+  -v "$CDIR":/config \
+  "$IMAGE"
+
+# ------------------------------ done ------------------------------
+echo
+log "Client is up. Follow logs with:  docker logs -f $CONTAINER"
+echo "You should see:  ${TUNNEL_USER}@${VPS_HOST}   (NOT hub@...)"
+echo
+echo "==================================================================="
+echo " ROBOT PUBLIC KEY  --  on the hub run 'robot-hub' > add, and paste:"
+echo "==================================================================="
+cat "$CDIR/id_ed25519.pub"
+echo "==================================================================="
+echo " Robot name: $ROBOT_NAME   |   Reverse port: $VPS_PORT   |   User: $ROBOT_USER"
+echo
+echo " If logs show 'Permission denied (publickey)':"
+echo "   the robot key above is not added on the hub, or the port differs."
