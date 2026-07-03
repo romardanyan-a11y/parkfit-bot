@@ -48,6 +48,52 @@ else:
 PYEOF
 )"
 
+# Write the build context, rebuild the image (always) and (re)start the container.
+build_and_run(){
+  mkdir -p "$BUILD"
+  cat > "$BUILD/run-tunnel.sh" <<'RUN'
+#!/bin/sh
+set -e
+. /config/tunnel.conf
+chmod 600 /config/id_ed25519 2>/dev/null || true
+touch /config/known_hosts
+echo "Starting reverse tunnel: ${TUNNEL_USER}@${VPS_HOST}:${VPS_SSH_PORT}  ->  127.0.0.1:${VPS_PORT} => robot:22"
+exec autossh -M 0 \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -o StrictHostKeyChecking=accept-new \
+  -o UserKnownHostsFile=/config/known_hosts \
+  -o IdentitiesOnly=yes \
+  -i /config/id_ed25519 \
+  -p "${VPS_SSH_PORT}" \
+  -N \
+  -R 127.0.0.1:${VPS_PORT}:127.0.0.1:22 \
+  "${TUNNEL_USER}@${VPS_HOST}"
+RUN
+  cat > "$BUILD/Dockerfile" <<'DOCKER'
+FROM debian:stable-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      autossh openssh-client ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+ENV AUTOSSH_GATETIME=0
+COPY run-tunnel.sh /usr/local/bin/run-tunnel.sh
+RUN chmod +x /usr/local/bin/run-tunnel.sh
+ENTRYPOINT ["/usr/local/bin/run-tunnel.sh"]
+DOCKER
+  log "Building image $IMAGE ..."
+  docker build -t "$IMAGE" "$BUILD"
+  log "Recreating container $CONTAINER ..."
+  docker rm -f "$CONTAINER" 2>/dev/null || true
+  docker run -d --name "$CONTAINER" --restart unless-stopped --network host -v "$CDIR":/config "$IMAGE"
+  echo
+  log "Done. Follow logs:  docker logs -f $CONTAINER"
+  echo "You should see:  ${TUNNEL_USER}@${VPS_HOST}"
+  echo "==================================================================="
+  echo " ROBOT PUBLIC KEY:"; cat "$CDIR/id_ed25519.pub"
+  echo "==================================================================="
+}
+
 [ "$(id -u)" = "0" ] || { err "Please run as root (sudo)."; exit 1; }
 
 # ------------------------------ load saved details ------------------------------
@@ -61,6 +107,16 @@ touch "$CDIR/known_hosts"
 getent passwd "$ROBOT_USER" >/dev/null || { err "User '$ROBOT_USER' does not exist."; exit 1; }
 
 log "Robot: $ROBOT_NAME (user: $ROBOT_USER)  ->  $VPS_HOST"
+
+# Rebuild-only mode: no key exchange, just rebuild the image and restart the
+# container from the existing /config (use after a stale image / crash).
+if [ "${1:-}" = "rebuild" ] || [ "${1:-}" = "--rebuild" ]; then
+  [ -f "$CDIR/tunnel.conf" ] || { err "No $CDIR/tunnel.conf yet - run a normal sync first."; exit 1; }
+  log "Rebuild-only: reusing existing $CDIR/tunnel.conf (no key exchange)."
+  build_and_run
+  exit 0
+fi
+
 command -v python3 >/dev/null 2>&1 || { apt-get install -y python3 2>/dev/null || true; }
 command -v python3 >/dev/null 2>&1 || { err "python3 not available."; exit 1; }
 
@@ -109,49 +165,5 @@ ROBOT_USER=$ROBOT_USER
 NOTES=${NOTES:-}
 CONF
 
-# ------------------------------ (re)build our image, always ------------------------------
-# Always rebuild so a stale/foreign robot-tunnel-client image can never be reused.
-mkdir -p "$BUILD"
-cat > "$BUILD/run-tunnel.sh" <<'RUN'
-#!/bin/sh
-set -e
-. /config/tunnel.conf
-chmod 600 /config/id_ed25519 2>/dev/null || true
-touch /config/known_hosts
-echo "Starting reverse tunnel: ${TUNNEL_USER}@${VPS_HOST}:${VPS_SSH_PORT}  ->  127.0.0.1:${VPS_PORT} => robot:22"
-exec autossh -M 0 \
-  -o ServerAliveInterval=30 \
-  -o ServerAliveCountMax=3 \
-  -o ExitOnForwardFailure=yes \
-  -o StrictHostKeyChecking=accept-new \
-  -o UserKnownHostsFile=/config/known_hosts \
-  -o IdentitiesOnly=yes \
-  -i /config/id_ed25519 \
-  -p "${VPS_SSH_PORT}" \
-  -N \
-  -R 127.0.0.1:${VPS_PORT}:127.0.0.1:22 \
-  "${TUNNEL_USER}@${VPS_HOST}"
-RUN
-cat > "$BUILD/Dockerfile" <<'DOCKER'
-FROM debian:stable-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      autossh openssh-client ca-certificates \
- && rm -rf /var/lib/apt/lists/*
-ENV AUTOSSH_GATETIME=0
-COPY run-tunnel.sh /usr/local/bin/run-tunnel.sh
-RUN chmod +x /usr/local/bin/run-tunnel.sh
-ENTRYPOINT ["/usr/local/bin/run-tunnel.sh"]
-DOCKER
-log "Building image $IMAGE ..."
-docker build -t "$IMAGE" "$BUILD"
-
-log "Recreating container $CONTAINER ..."
-docker rm -f "$CONTAINER" 2>/dev/null || true
-docker run -d --name "$CONTAINER" --restart unless-stopped --network host -v "$CDIR":/config "$IMAGE"
-
-echo
-log "Done. Follow logs:  docker logs -f $CONTAINER"
-echo "You should see:  ${TUNNEL_USER}@${VPS_HOST}"
-echo "==================================================================="
-echo " ROBOT PUBLIC KEY:"; cat "$CDIR/id_ed25519.pub"
-echo "==================================================================="
+# ------------------------------ rebuild image & (re)start container ------------------------------
+build_and_run

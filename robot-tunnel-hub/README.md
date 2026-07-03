@@ -43,7 +43,8 @@ always fall back to manual pairing.
 **Retry a failed sync without re-typing the details** — the setup saves them the first
 time, so afterwards just run:
 ```bash
-sudo bash robot-sync.sh      # asks only for the pairing code
+sudo bash robot-sync.sh              # asks only for the pairing code
+sudo bash robot-sync.sh rebuild      # no exchange: just rebuild image + restart container
 ```
 
 ### B) Manual mode (copy/paste)
