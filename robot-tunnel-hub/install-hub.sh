@@ -91,6 +91,9 @@ fi
 chmod 600 /data/ssh/host_keys/ssh_host_ed25519_key
 chmod 644 /data/ssh/host_keys/ssh_host_ed25519_key.pub
 
+# Ensure the tunnel account is not "locked" (sshd with UsePAM no rejects '!' passwords).
+usermod -p '*NP*' robot-tunnel 2>/dev/null || true
+
 [ -f /data/registry.json ] || echo '{}' > /data/registry.json
 touch /data/ssh/authorized_keys
 chown root:root /data/ssh/authorized_keys
@@ -468,7 +471,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       openssh-server openssh-client whiptail jq iproute2 python3 ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /run/sshd \
- && useradd -m -s /usr/sbin/nologin robot-tunnel
+ && useradd -m -s /usr/sbin/nologin robot-tunnel \
+ && usermod -p '*NP*' robot-tunnel
 COPY sshd_config      /etc/ssh/sshd_config
 COPY robot-hub        /usr/local/bin/robot-hub
 COPY entrypoint.sh    /usr/local/bin/entrypoint.sh
