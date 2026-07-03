@@ -15,29 +15,38 @@ Two files, run one on each side:
 - `install-hub.sh` — run once on the **VPS/server**.
 - `setup-robot-tunnel-client.sh` — run once on **each robot**.
 
-## Usage (3 steps)
+## Setup — server once
 
-**1. Server (once):**
 ```bash
 sudo bash install-hub.sh
 ```
-It installs Docker, builds and starts the `robot-tunnel-hub` container, installs the
-`robot-hub` command, and prints the **server public key**. Copy that key.
-Firewall: allow only `2222/tcp` inbound.
+Installs Docker, builds/starts the `robot-tunnel-hub` container, installs the `robot-hub`
+command, and prints the **server public key**. Firewall: allow `2222/tcp` inbound (and
+`2223/tcp` only while pairing — see sync mode).
 
-**2. Robot (per robot):**
-```bash
-sudo bash setup-robot-tunnel-client.sh
-```
-Answer the prompts (name, SN, reverse port e.g. `22001`, robot SSH user, notes), paste the
-**server public key** when asked. It builds and starts the `robot-tunnel-client` container
-(autossh) and prints the **robot public key**. Copy that key.
+Then pair each robot in **one of two ways**:
 
-**3. Server — register the robot:**
-```bash
-robot-hub        # -> add -> paste robot public key, use the SAME reverse port
-```
-Then `robot-hub` → `select` → `connect` / `sftp`.
+### A) Sync mode (recommended — automatic key exchange)
+
+No copy/paste. The machines exchange keys over the network with your approval.
+
+1. **Server:** `robot-hub` → `sync`. It shows a 6-digit **pairing code** and listens on
+   TCP `2223` for one robot (open `2223/tcp` for this window).
+2. **Robot:** `sudo bash setup-robot-tunnel-client.sh` → choose mode **1 (sync)**, answer
+   the details, enter the **server IP** and the **pairing code**.
+3. **Server:** a dialog shows the robot's name/SN/user/key → **Approve**. Done: a free
+   reverse port is assigned automatically, both keys are installed, the tunnel starts.
+
+On success *or* failure, **both machines print their SSH keys** to the console so you can
+always fall back to manual pairing.
+
+### B) Manual mode (copy/paste)
+
+1. **Robot:** run setup, choose mode **2 (manual)**, enter a reverse port (e.g. `22001`),
+   paste the **server public key**. It prints the **robot public key**.
+2. **Server:** `robot-hub` → `add` → paste the robot public key, use the **same** port.
+
+After pairing (either way): `robot-hub` → `select` → `connect` / `sftp`.
 
 ## Why it stays up and doesn't hang
 
@@ -58,6 +67,8 @@ Then `robot-hub` → `select` → `connect` / `sftp`.
   `AllowTcpForwarding remote`, `GatewayPorts no` → reverse ports live only on `127.0.0.1`.
 - The hub reaches robots as your chosen `robot_user` using the hub→robot key
   (`/data/ssh/hub_to_robot_ed25519`), so `connect` never asks for a password.
+- Sync mode is guarded twice: a one-time pairing code **and** an explicit approve dialog
+  on the server. The listener runs only during that window and accepts a single robot.
 
 ## Troubleshooting
 

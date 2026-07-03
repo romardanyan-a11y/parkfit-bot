@@ -112,10 +112,42 @@ AUTH="$SSH_DIR/authorized_keys"
 HKEY="$SSH_DIR/hub_to_robot_ed25519"
 KNOWN="$SSH_DIR/known_hosts_robots"
 BT=whiptail
+HUB_SSH_PORT=2222
+SYNC_PORT="${SYNC_PORT:-2223}"
 
 mkdir -p "$SSH_DIR"
 [ -f "$REG" ] || echo '{}' > "$REG"
 touch "$AUTH" "$KNOWN"
+
+# One-shot TCP bridge: accept one robot, print its request line to stdout,
+# read one response line from stdin, send it back. Keeps registry logic in bash.
+PYBRIDGE_SERVER="$(cat <<'PYEOF'
+import socket, sys
+port = int(sys.argv[1])
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(("0.0.0.0", port))
+srv.listen(1)
+srv.settimeout(300)
+try:
+    conn, addr = srv.accept()
+except socket.timeout:
+    sys.stderr.write("no robot connected (timeout)\n"); sys.exit(2)
+conn.settimeout(300)
+f = conn.makefile("rwb", buffering=0)
+line = f.readline()
+if not line:
+    sys.exit(3)
+sys.stdout.buffer.write(line if line.endswith(b"\n") else line + b"\n")
+sys.stdout.flush()
+resp = sys.stdin.buffer.readline()
+try:
+    f.write(resp); f.flush()
+except Exception:
+    pass
+conn.close()
+PYEOF
+)"
 
 now(){ date -u +%FT%TZ; }
 msg(){ $BT --title "$1" --msgbox "$2" 20 78; }
@@ -308,13 +340,107 @@ server_key(){
   done
 }
 
+ensure_hub_key(){ [ -f "$HKEY" ] || ssh-keygen -q -t ed25519 -f "$HKEY" -N "" -C hub-to-robot; }
+
+print_keys_fallback(){ # $1 = robot pubkey (optional)
+  clear
+  echo "==================== SSH KEYS (manual fallback) ===================="
+  echo "HUB public key (hub_to_robot_ed25519.pub) - install on the robot user:"
+  [ -f "$HKEY.pub" ] && cat "$HKEY.pub" || echo "(none)"
+  if [ -n "${1:-}" ]; then
+    echo
+    echo "ROBOT public key (from this pairing attempt):"
+    echo "$1"
+  fi
+  echo "===================================================================="
+  read -rp "Press Enter to return to the menu..." _
+}
+
+sync_mode(){
+  ensure_hub_key
+  local code; code=$(printf '%06d' $(( ( (RANDOM<<15) | RANDOM ) % 1000000 )))
+  $BT --title "Synchronization mode" --msgbox \
+"Pairing code for the robot:
+
+        $code
+
+Listening on TCP $SYNC_PORT for ONE robot (up to 5 min).
+Make sure $SYNC_PORT/tcp is reachable (firewall).
+
+On the robot: run setup, choose 'sync', enter this server's
+IP and the code above. Press OK to start listening." 20 74 || return
+
+  clear
+  echo "[sync] Listening on 0.0.0.0:$SYNC_PORT  code=$code  (waiting for robot)"
+  local req
+  coproc BR { python3 -c "$PYBRIDGE_SERVER" "$SYNC_PORT" 2>/tmp/sync.err; }
+  if ! IFS= read -r -t 320 req <&"${BR[0]}"; then
+    kill "$BR_PID" 2>/dev/null || true; wait "$BR_PID" 2>/dev/null || true
+    msg "Sync failed" "No robot connected, or the port is busy.\n\n$(cat /tmp/sync.err 2>/dev/null)"
+    print_keys_fallback ""; return
+  fi
+
+  local rcode rname rsn ruser rnotes rkey
+  rcode=$(printf '%s' "$req" | jq -r '.code   // ""' 2>/dev/null)
+  rname=$(printf '%s' "$req" | jq -r '.name   // ""' 2>/dev/null)
+  rsn=$(  printf '%s' "$req" | jq -r '.sn     // ""' 2>/dev/null)
+  ruser=$(printf '%s' "$req" | jq -r '.robot_user // ""' 2>/dev/null)
+  rnotes=$(printf '%s' "$req" | jq -r '.notes // ""' 2>/dev/null)
+  rkey=$( printf '%s' "$req" | jq -r '.pubkey // ""' 2>/dev/null)
+
+  send_resp(){ printf '%s\n' "$1" >&"${BR[1]}"; wait "$BR_PID" 2>/dev/null || true; }
+
+  if [ "$rcode" != "$code" ]; then
+    send_resp '{"status":"rejected","reason":"bad code"}'
+    msg "Sync rejected" "Wrong pairing code from '$rname'. Nothing was added."
+    print_keys_fallback "$rkey"; return
+  fi
+  case "$rkey" in ssh-*) : ;; *)
+    send_resp '{"status":"rejected","reason":"bad key"}'
+    msg "Sync failed" "Robot sent an invalid public key."
+    print_keys_fallback "$rkey"; return;; esac
+
+  if ! confirm "Approve robot?" "A robot wants to pair:
+
+Name:  $rname
+SN:    $rsn
+User:  $ruser
+Notes: $rnotes
+Key:   ${rkey:0:38}...
+
+Approve and exchange SSH keys?"; then
+    send_resp '{"status":"rejected","reason":"operator declined"}'
+    msg "Sync rejected" "You declined pairing with '$rname'. Nothing was added."
+    print_keys_fallback "$rkey"; return
+  fi
+
+  # Resolve name collision, assign a free port, register, authorize.
+  local base="$rname" i=1
+  [ -n "$rname" ] || { rname="robot"; base="robot"; }
+  while jq -e --arg n "$rname" 'has($n)' "$REG" >/dev/null; do rname="${base}-$i"; i=$((i+1)); done
+  [ -n "$ruser" ] || ruser="robot"
+  local newport ts hubpub resp
+  newport=$(next_port); ts=$(now); hubpub=$(cat "$HKEY.pub")
+  jq --arg n "$rname" --arg sn "$rsn" --argjson p "$newport" --arg u "$ruser" \
+     --arg no "$rnotes" --arg k "$rkey" --arg t "$ts" \
+     '.[$n]={sn:$sn,port:$p,tunnel_user:"robot-tunnel",robot_user:$u,notes:$no,public_key:$k,created_at:$t,updated_at:$t}' \
+     "$REG" | reg_write
+  auth_add "$newport" "$rkey" "$rname"
+  resp=$(jq -cn --arg s ok --argjson p "$newport" --argjson sp "$HUB_SSH_PORT" --arg k "$hubpub" \
+     '{status:$s,port:$p,hub_ssh_port:$sp,hub_pubkey:$k}')
+  send_resp "$resp"
+  msg "Sync OK" "Paired '$rname' on port $newport.\nSSH keys exchanged. The robot should come online shortly."
+  print_keys_fallback "$rkey"
+}
+
 main_menu(){
   local c
   while true; do
-    c=$($BT --title "Robot Tunnel Hub" --menu "Main menu" 20 76 8 \
+    c=$($BT --title "Robot Tunnel Hub" --menu "Main menu" 21 76 9 \
       dashboard  "List robots (online/offline)" \
       select     "Select a robot and act on it" \
-      add        "Add a robot" \
+      add        "Add a robot (manual)" \
+      sync       "Synchronization mode (auto key exchange)" \
       server-key "Manage hub->robot server key" \
       authorized "Show authorized_keys" \
       raw        "Show registry.json" \
@@ -323,6 +449,7 @@ main_menu(){
       dashboard) dashboard;;
       select) select_robot;;
       add) add_robot;;
+      sync) sync_mode;;
       server-key) server_key;;
       authorized) msg "authorized_keys" "$(cat "$AUTH")";;
       raw) msg "registry.json" "$(jq . "$REG")";;
@@ -338,7 +465,7 @@ ROBOTHUB
 cat > "$BUILD/Dockerfile" <<'DOCKER'
 FROM debian:stable-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      openssh-server openssh-client whiptail jq iproute2 ca-certificates \
+      openssh-server openssh-client whiptail jq iproute2 python3 ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /run/sshd \
  && useradd -m -s /usr/sbin/nologin robot-tunnel
@@ -383,7 +510,9 @@ echo "-------------------------------------------------------------------"
 docker exec "$CONTAINER" cat /data/ssh/hub_to_robot_ed25519.pub
 echo "-------------------------------------------------------------------"
 echo
-echo " Firewall reminder: allow only ${HUB_PORT}/tcp inbound."
+echo " Firewall reminder: allow ${HUB_PORT}/tcp always, and 2223/tcp while pairing."
+echo " (2223 is the synchronization port; you may keep it closed and open it"
+echo "  only when using 'robot-hub' > sync.)"
 echo " Do NOT open robot ports (22001, 22002, ...) - they stay on 127.0.0.1."
 echo
 echo " Quick check:  ss -tlnp | grep -E '${HUB_PORT}|2200'"

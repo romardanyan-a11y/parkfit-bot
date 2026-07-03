@@ -24,6 +24,36 @@ CONTAINER="robot-tunnel-client"
 CDIR="/opt/robot-tunnel-client"
 BUILD="$CDIR/build"
 
+# Sync client: send our request JSON, read the server response, drop results to files.
+# argv: host port code name sn robot_user notes pubkey outdir
+PYCLIENT="$(cat <<'PYEOF'
+import socket, sys, json
+host, port, code, name, sn, user, notes, pubkey, outdir = sys.argv[1:10]
+req = json.dumps({"v": 1, "code": code, "name": name, "sn": sn,
+                  "robot_user": user, "notes": notes, "pubkey": pubkey})
+try:
+    s = socket.create_connection((host, int(port)), timeout=300)
+    s.settimeout(300)
+    f = s.makefile("rwb", buffering=0)
+    f.write(req.encode() + b"\n")
+    line = f.readline()
+    resp = json.loads(line.decode())
+except Exception as e:
+    open(outdir + "/.sync_result", "w").write("SYNC_STATUS=error\n")
+    print("error:", e); sys.exit(1)
+if resp.get("status") == "ok":
+    with open(outdir + "/.sync_result", "w") as fh:
+        fh.write("SYNC_STATUS=ok\n")
+        fh.write("SYNC_PORT=%d\n" % int(resp.get("port", 0)))
+        fh.write("SYNC_HUB_SSH_PORT=%d\n" % int(resp.get("hub_ssh_port", 2222)))
+    open(outdir + "/.sync_hub_pubkey", "w").write((resp.get("hub_pubkey", "") or "").strip() + "\n")
+    print("ok: paired on reverse port", resp.get("port")); sys.exit(0)
+else:
+    open(outdir + "/.sync_result", "w").write("SYNC_STATUS=%s\n" % resp.get("status", "rejected"))
+    print("rejected:", resp.get("reason", "")); sys.exit(3)
+PYEOF
+)"
+
 log(){ printf '\033[1;36m[robot]\033[0m %s\n' "$*"; }
 err(){ printf '\033[1;31m[robot] ERROR:\033[0m %s\n' "$*" >&2; }
 ask(){ local p="$1" d="${2:-}" a; if [ -n "$d" ]; then read -rp "$p [$d]: " a; echo "${a:-$d}"; else read -rp "$p: " a; echo "$a"; fi; }
@@ -53,18 +83,22 @@ if command -v systemctl >/dev/null 2>&1; then
   done
 fi
 
-# ------------------------------ ask details ------------------------------
+# ------------------------------ mode + details ------------------------------
+echo
+echo "Setup mode:"
+echo "  1) sync   - automatic SSH key exchange with the server (recommended)"
+echo "  2) manual - copy/paste the public keys yourself"
+MODE=$(ask "Choose mode [1=sync, 2=manual]" "1")
+case "$MODE" in 1|2) : ;; *) MODE=1;; esac
+
 echo
 log "Enter robot details (tunnel user is always '$TUNNEL_USER', not asked):"
 ROBOT_NAME=$(ask "Robot name")
 ROBOT_SN=$(ask "Robot SN")
 VPS_HOST=$(ask "VPS host/IP" "$VPS_HOST_DEFAULT")
 VPS_SSH_PORT=$(ask "VPS SSH port" "$VPS_SSH_PORT_DEFAULT")
-VPS_PORT=$(ask "VPS reverse port (must match the hub, e.g. 22001)")
 ROBOT_USER=$(ask "Robot SSH/SFTP user (e.g. siasun, root, robot)" "robot")
 NOTES=$(ask "Notes" "")
-
-case "$VPS_PORT" in ''|*[!0-9]*) err "Reverse port must be numeric."; exit 1;; esac
 getent passwd "$ROBOT_USER" >/dev/null || { err "User '$ROBOT_USER' does not exist on this robot."; exit 1; }
 
 # ------------------------------ robot key ------------------------------
@@ -76,15 +110,44 @@ fi
 chmod 600 "$CDIR/id_ed25519"
 touch "$CDIR/known_hosts"
 
-# ------------------------------ hub public key -> robot user ------------------------------
-echo
-log "Paste the SERVER public key (hub_to_robot_ed25519.pub) shown by the hub installer."
-log "This lets the hub connect INTO this robot as '$ROBOT_USER' without a password."
-read -rp "Server public key: " SERVER_PUBKEY
-case "$SERVER_PUBKEY" in
-  ssh-*) : ;;
-  *) err "That does not look like an SSH public key (must start with 'ssh-'). Aborting."; exit 1;;
-esac
+# ------------------------------ obtain server key (sync or manual) ------------------------------
+if [ "$MODE" = "1" ]; then
+  command -v python3 >/dev/null 2>&1 || { log "Installing python3 for sync ..."; apt-get install -y python3 2>/dev/null || true; }
+  command -v python3 >/dev/null 2>&1 || { err "python3 not available; re-run and choose manual mode (2)."; exit 1; }
+  PAIR_PORT=$(ask "Server pairing port" "2223")
+  CODE=$(ask "Pairing code shown on the server (sync mode)")
+  echo
+  log "Contacting $VPS_HOST:$PAIR_PORT for automatic key exchange (approve on the server) ..."
+  if python3 -c "$PYCLIENT" "$VPS_HOST" "$PAIR_PORT" "$CODE" \
+       "$ROBOT_NAME" "$ROBOT_SN" "$ROBOT_USER" "$NOTES" "$(cat "$CDIR/id_ed25519.pub")" "$CDIR"; then
+    # shellcheck disable=SC1091
+    . "$CDIR/.sync_result"
+    VPS_PORT="$SYNC_PORT"
+    VPS_SSH_PORT="${SYNC_HUB_SSH_PORT:-$VPS_SSH_PORT}"
+    SERVER_PUBKEY="$(cat "$CDIR/.sync_hub_pubkey")"
+    rm -f "$CDIR/.sync_result" "$CDIR/.sync_hub_pubkey"
+    log "Key exchange OK. Assigned reverse port: $VPS_PORT"
+  else
+    rm -f "$CDIR/.sync_result" "$CDIR/.sync_hub_pubkey" 2>/dev/null || true
+    err "Key exchange failed (wrong code, operator declined, or server not in sync mode)."
+    echo
+    echo "==================================================================="
+    echo " ROBOT PUBLIC KEY (add it manually on the hub: robot-hub > add):"
+    echo "==================================================================="
+    cat "$CDIR/id_ed25519.pub"
+    echo "==================================================================="
+    exit 1
+  fi
+else
+  VPS_PORT=$(ask "VPS reverse port (must match the hub, e.g. 22001)")
+  case "$VPS_PORT" in ''|*[!0-9]*) err "Reverse port must be numeric."; exit 1;; esac
+  echo
+  log "Paste the SERVER public key (hub_to_robot_ed25519.pub) shown by the hub."
+  log "This lets the hub connect INTO this robot as '$ROBOT_USER' without a password."
+  read -rp "Server public key: " SERVER_PUBKEY
+  case "$SERVER_PUBKEY" in ssh-*) : ;; *) err "Not an SSH public key (must start with 'ssh-')."; exit 1;; esac
+fi
+
 HOME_DIR="$(getent passwd "$ROBOT_USER" | cut -d: -f6)"
 GRP="$(id -gn "$ROBOT_USER")"
 install -d -m 700 -o "$ROBOT_USER" -g "$GRP" "$HOME_DIR/.ssh"
