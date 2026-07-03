@@ -91,18 +91,35 @@ echo "  2) manual - copy/paste the public keys yourself"
 MODE=$(ask "Choose mode [1=sync, 2=manual]" "1")
 case "$MODE" in 1|2) : ;; *) MODE=1;; esac
 
+# Reuse previously entered details as defaults (so you don't retype them).
+mkdir -p "$CDIR" "$BUILD"
+if [ -f "$CDIR/robot.conf" ]; then
+  # shellcheck disable=SC1091
+  . "$CDIR/robot.conf"
+  log "Found saved details for '${ROBOT_NAME:-?}'. Press Enter to keep each value."
+fi
+
 echo
 log "Enter robot details (tunnel user is always '$TUNNEL_USER', not asked):"
-ROBOT_NAME=$(ask "Robot name")
-ROBOT_SN=$(ask "Robot SN")
-VPS_HOST=$(ask "VPS host/IP" "$VPS_HOST_DEFAULT")
-VPS_SSH_PORT=$(ask "VPS SSH port" "$VPS_SSH_PORT_DEFAULT")
-ROBOT_USER=$(ask "Robot SSH/SFTP user (e.g. siasun, root, robot)" "robot")
-NOTES=$(ask "Notes" "")
+ROBOT_NAME=$(ask "Robot name" "${ROBOT_NAME:-}")
+ROBOT_SN=$(ask "Robot SN" "${ROBOT_SN:-}")
+VPS_HOST=$(ask "VPS host/IP" "${VPS_HOST:-$VPS_HOST_DEFAULT}")
+VPS_SSH_PORT=$(ask "VPS SSH port" "${VPS_SSH_PORT:-$VPS_SSH_PORT_DEFAULT}")
+ROBOT_USER=$(ask "Robot SSH/SFTP user (e.g. siasun, root, robot)" "${ROBOT_USER:-robot}")
+NOTES=$(ask "Notes" "${NOTES:-}")
 getent passwd "$ROBOT_USER" >/dev/null || { err "User '$ROBOT_USER' does not exist on this robot."; exit 1; }
 
+# Persist details NOW (before the exchange) so a later 'resync' needs only the code.
+cat > "$CDIR/robot.conf" <<CONF
+ROBOT_NAME=$ROBOT_NAME
+ROBOT_SN=$ROBOT_SN
+VPS_HOST=$VPS_HOST
+VPS_SSH_PORT=$VPS_SSH_PORT
+ROBOT_USER=$ROBOT_USER
+NOTES=$NOTES
+CONF
+
 # ------------------------------ robot key ------------------------------
-mkdir -p "$CDIR" "$BUILD"
 if [ ! -f "$CDIR/id_ed25519" ]; then
   log "Generating robot key ..."
   ssh-keygen -q -t ed25519 -f "$CDIR/id_ed25519" -N "" -C "robot-$ROBOT_NAME"

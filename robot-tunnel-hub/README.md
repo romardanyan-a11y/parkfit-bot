@@ -40,6 +40,12 @@ No copy/paste. The machines exchange keys over the network with your approval.
 On success *or* failure, **both machines print their SSH keys** to the console so you can
 always fall back to manual pairing.
 
+**Retry a failed sync without re-typing the details** — the setup saves them the first
+time, so afterwards just run:
+```bash
+sudo bash robot-sync.sh      # asks only for the pairing code
+```
+
 ### B) Manual mode (copy/paste)
 
 1. **Robot:** run setup, choose mode **2 (manual)**, enter a reverse port (e.g. `22001`),
