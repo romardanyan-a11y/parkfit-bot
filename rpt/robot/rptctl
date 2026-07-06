@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# rptctl — консоль управления RPT-роботом (запускается на хосте робота).
+# Команды: sync | status | restart | stop | start | logs | config | info | help
+set -euo pipefail
+
+CONF_DIR=/etc/rpt-robot
+APP_DIR=/opt/rpt-robot
+CONF="$CONF_DIR/robot.env"
+RUNTIME="$CONF_DIR/runtime.env"
+TUNNEL_KEY="$CONF_DIR/tunnel_key"
+
+C_G='\033[32m'; C_R='\033[31m'; C_Y='\033[33m'; C_B='\033[36m'; C_0='\033[0m'
+say()  { echo -e "$*"; }
+ok()   { echo -e "${C_G}✔${C_0} $*"; }
+warn() { echo -e "${C_Y}!${C_0} $*"; }
+err()  { echo -e "${C_R}✖${C_0} $*" >&2; }
+
+need_root() { [ "$(id -u)" = 0 ] || { err "Нужны права root (sudo rptctl ...)"; exit 1; }; }
+
+load_conf() {
+  [ -f "$CONF" ] || { err "Нет $CONF. Запустите robot-install.sh"; exit 1; }
+  # shellcheck disable=SC1090
+  . "$CONF"
+  WEB_URL="${WEB_URL:-http://${SERVER_HOST}:${WEB_PORT}}"
+}
+
+compose() { ( cd "$APP_DIR" && docker compose "$@" ); }
+
+# --------------------------------------------------------------------------
+cmd_sync() {
+  need_root; load_conf
+  say "${C_B}== Синхронизация ключей с сервером ==${C_0}"
+  say "Сервер: $SERVER_HOST | веб: $WEB_URL | hub-порт: $HUB_PORT"
+
+  # 1. туннельный ключ робота
+  if [ ! -f "$TUNNEL_KEY" ]; then
+    ssh-keygen -t ed25519 -N "" -C "rpt-robot-${SERIAL}" -f "$TUNNEL_KEY" >/dev/null
+    ok "Сгенерирован туннельный ключ робота"
+  fi
+  local PUB; PUB="$(cat "${TUNNEL_KEY}.pub")"
+
+  # 2. код сопряжения
+  echo
+  read -rp "Введите КОД сопряжения (с веб-панели, кнопка «Синхронизация»): " CODE
+  [ -n "$CODE" ] || { err "Код пуст"; exit 1; }
+
+  # 3. заявка на сервер
+  local RESP; RESP="$(curl -fsS -m 15 -X POST "${WEB_URL}/api/enroll" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -n --arg c "$CODE" --arg s "$SERIAL" --arg n "$NAME" \
+              --arg k "$PUB" --arg u "$SSH_USER" \
+              '{code:$c,serial:$s,name:$n,tunnel_pubkey:$k,ssh_user:$u}')" )" \
+    || { err "Сервер отклонил заявку (код неверный/просрочен?)"; exit 1; }
+
+  local EID TOK
+  EID="$(echo "$RESP" | jq -r '.enroll_id')"
+  TOK="$(echo "$RESP" | jq -r '.token')"
+  ok "Заявка отправлена (id=$EID). Ожидаю подтверждения администратором..."
+  warn "Примите робота в веб-панели: раздел «Ожидают подтверждения»."
+
+  # 4. ожидание одобрения
+  local STATUS DATA i=0
+  while :; do
+    DATA="$(curl -fsS -m 10 "${WEB_URL}/api/enroll/${EID}?token=${TOK}")" || true
+    STATUS="$(echo "$DATA" | jq -r '.status // "?"')"
+    case "$STATUS" in
+      active)   ok "Подтверждено!"; break ;;
+      rejected) err "Заявка отклонена администратором."; exit 1 ;;
+    esac
+    i=$((i+1)); [ $i -gt 120 ] && { err "Тайм-аут ожидания (6 мин)."; exit 1; }
+    printf "\r  ожидание... %ss" "$((i*3))"; sleep 3
+  done
+  echo
+
+  # 5. сохраняем runtime-конфиг
+  local PORT HKEY APUB
+  PORT="$(echo "$DATA" | jq -r '.assigned_port')"
+  HKEY="$(echo "$DATA" | jq -r '.hub_hostkey')"
+  APUB="$(echo "$DATA" | jq -r '.admin_pubkey')"
+  {
+    echo "ENROLL_ID=$EID"
+    echo "TOKEN=$TOK"
+    echo "ASSIGNED_PORT=$PORT"
+    echo "HUB_HOSTKEY=\"$HKEY\""
+  } > "$RUNTIME"
+  chmod 600 "$RUNTIME"
+  ok "Назначен туннельный порт: $PORT"
+
+  # 6. ставим admin-ключ сервера в authorized_keys пользователя SSH_USER
+  install_admin_key "$APUB"
+
+  # 7. запускаем туннель
+  compose up -d --build
+  ok "Туннель запущен. Робот появится в панели со статусом ${C_G}онлайн${C_0}."
+}
+
+install_admin_key() {
+  local APUB="$1" HOME_DIR SSH_DIR AK
+  HOME_DIR="$(getent passwd "$SSH_USER" | cut -d: -f6)"
+  [ -n "$HOME_DIR" ] || { err "Пользователь $SSH_USER не найден"; exit 1; }
+  SSH_DIR="$HOME_DIR/.ssh"; AK="$SSH_DIR/authorized_keys"
+  mkdir -p "$SSH_DIR"; chmod 700 "$SSH_DIR"; touch "$AK"; chmod 600 "$AK"
+  if ! grep -qF "$APUB" "$AK" 2>/dev/null; then
+    echo "$APUB" >> "$AK"
+    ok "Admin-ключ сервера добавлен в $AK"
+  else
+    ok "Admin-ключ сервера уже установлен"
+  fi
+  chown -R "$SSH_USER":"$SSH_USER" "$SSH_DIR"
+}
+
+cmd_status() {
+  load_conf
+  say "${C_B}RPT робот${C_0}  |  SN: $SERIAL  |  имя: $NAME"
+  say "Сервер: $SERVER_HOST  (hub: $HUB_PORT, web: $WEB_PORT)"
+  if [ -f "$RUNTIME" ]; then . "$RUNTIME"; say "Туннельный порт: ${ASSIGNED_PORT:-—}"; fi
+  echo
+  if docker ps --format '{{.Names}}' | grep -q '^rpt-robot$'; then
+    ok "Контейнер туннеля: ${C_G}работает${C_0}"
+  else
+    err "Контейнер туннеля: ${C_R}остановлен${C_0}"
+  fi
+}
+
+cmd_restart() { need_root; compose restart; ok "Туннель перезапущен"; }
+cmd_stop()    { need_root; compose down; ok "Туннель остановлен"; }
+cmd_start()   { need_root; compose up -d; ok "Туннель запущен"; }
+cmd_logs()    { compose logs -f --tail=100; }
+cmd_config()  { load_conf; echo "--- $CONF ---"; cat "$CONF"; [ -f "$RUNTIME" ] && { echo "--- $RUNTIME ---"; cat "$RUNTIME"; }; }
+cmd_info()    { cmd_status; }
+
+menu() {
+  while :; do
+    echo
+    say "${C_B}==== RPT robot · меню ====${C_0}"
+    say " 1) Статус"
+    say " 2) Синхронизация ключей (добавить/переподключить к серверу)"
+    say " 3) Перезапустить туннель"
+    say " 4) Остановить туннель"
+    say " 5) Запустить туннель"
+    say " 6) Логи туннеля"
+    say " 7) Показать конфигурацию"
+    say " 0) Выход"
+    read -rp "Выбор: " ch
+    case "$ch" in
+      1) cmd_status ;; 2) cmd_sync ;; 3) cmd_restart ;;
+      4) cmd_stop ;;   5) cmd_start ;; 6) cmd_logs ;;
+      7) cmd_config ;; 0) exit 0 ;; *) warn "Неверный выбор" ;;
+    esac
+  done
+}
+
+case "${1:-menu}" in
+  sync)    cmd_sync ;;
+  status)  cmd_status ;;
+  restart) cmd_restart ;;
+  stop)    cmd_stop ;;
+  start)   cmd_start ;;
+  logs)    cmd_logs ;;
+  config)  cmd_config ;;
+  info)    cmd_info ;;
+  menu)    menu ;;
+  help|-h|--help)
+    echo "rptctl {sync|status|restart|stop|start|logs|config|info}  (без аргументов — меню)";;
+  *) err "Неизвестная команда: $1"; exit 1 ;;
+esac

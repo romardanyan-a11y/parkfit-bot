@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RPT — панель управления роботами</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- ========================= ЭКРАН ВХОДА ========================= -->
+<div id="login" class="login-screen">
+  <form id="login-form" class="login-box">
+    <div class="logo">RPT</div>
+    <div class="subtitle">Панель управления роботами</div>
+    <input type="password" id="login-password" placeholder="Пароль администратора" autocomplete="current-password">
+    <button type="submit">Войти</button>
+    <div id="login-error" class="err"></div>
+  </form>
+</div>
+
+<!-- ========================= ОСНОВНОЙ ИНТЕРФЕЙС ========================= -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-logo">RPT</span>
+      <button id="logout-btn" class="ghost small" title="Выйти">⎋</button>
+    </div>
+
+    <div class="sync-block">
+      <button id="sync-btn" class="sync-btn">🔑 Синхронизация ключей</button>
+      <div id="pairing-info" class="pairing-info hidden"></div>
+    </div>
+
+    <div id="pending-section" class="pending-section hidden">
+      <div class="section-title">Ожидают подтверждения</div>
+      <div id="pending-list"></div>
+    </div>
+
+    <div class="section-title">Роботы <span id="robot-count" class="count"></span></div>
+    <div id="robot-list" class="robot-list"></div>
+  </aside>
+
+  <main class="main">
+    <div id="welcome" class="welcome">
+      <div class="welcome-inner">
+        <div class="welcome-logo">RPT</div>
+        <p>Выберите робота слева и нажмите <b>SSH</b> или <b>SFTP</b>.</p>
+        <p class="muted">Чтобы добавить нового робота — нажмите «Синхронизация ключей»,
+           затем запустите синхронизацию на роботе.</p>
+      </div>
+    </div>
+
+    <!-- Терминал -->
+    <div id="terminal-view" class="terminal-view hidden">
+      <div class="tab-header">
+        <span id="term-title"></span>
+        <button id="term-close" class="ghost small">✕ Закрыть</button>
+      </div>
+      <div id="terminal" class="terminal"></div>
+    </div>
+
+    <!-- SFTP -->
+    <div id="sftp-view" class="sftp-view hidden">
+      <div class="tab-header">
+        <span id="sftp-title"></span>
+        <div class="sftp-actions">
+          <button id="sftp-up" class="ghost small">⬆ Вверх</button>
+          <button id="sftp-mkdir" class="ghost small">＋ Папка</button>
+          <label class="ghost small upload-label">⬆ Загрузить
+            <input type="file" id="sftp-upload" hidden>
+          </label>
+          <button id="sftp-close" class="ghost small">✕ Закрыть</button>
+        </div>
+      </div>
+      <div id="sftp-path" class="sftp-path"></div>
+      <table class="sftp-table">
+        <thead><tr><th>Имя</th><th>Размер</th><th>Изменён</th><th></th></tr></thead>
+        <tbody id="sftp-body"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Модалка заметок -->
+<div id="notes-modal" class="modal hidden">
+  <div class="modal-box">
+    <h3 id="notes-title">Заметки</h3>
+    <input id="notes-name" placeholder="Название робота">
+    <textarea id="notes-text" rows="6" placeholder="Заметки..."></textarea>
+    <div class="modal-actions">
+      <button id="notes-cancel" class="ghost">Отмена</button>
+      <button id="notes-save">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

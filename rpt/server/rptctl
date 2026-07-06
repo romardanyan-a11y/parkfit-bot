@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# rptctl (сервер) — консоль управления центральным RPT-сервером.
+set -euo pipefail
+
+APP_DIR="${RPT_SERVER_DIR:-/opt/rpt-server}"
+[ -f "$APP_DIR/docker-compose.yml" ] || APP_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+ENV_FILE="$APP_DIR/.env"
+
+C_G='\033[32m'; C_R='\033[31m'; C_Y='\033[33m'; C_B='\033[36m'; C_0='\033[0m'
+say(){ echo -e "$*"; }; ok(){ echo -e "${C_G}✔${C_0} $*"; }
+warn(){ echo -e "${C_Y}!${C_0} $*"; }; err(){ echo -e "${C_R}✖${C_0} $*" >&2; }
+compose(){ ( cd "$APP_DIR" && docker compose "$@" ); }
+get_env(){ grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-; }
+
+cmd_status(){
+  say "${C_B}RPT сервер${C_0}  ($APP_DIR)"
+  say "Веб-панель: http://$(get_env RPT_HUB_PUBLIC_HOST):$(get_env RPT_WEB_PORT)"
+  say "SSH-хаб:    $(get_env RPT_HUB_PUBLIC_HOST):$(get_env RPT_HUB_PORT)"
+  echo; compose ps
+}
+cmd_url(){ say "http://$(get_env RPT_HUB_PUBLIC_HOST):$(get_env RPT_WEB_PORT)"; }
+cmd_logs(){ if [ -n "${2:-}" ]; then compose logs -f --tail=120 "$2"; else compose logs -f --tail=120; fi; }
+cmd_restart(){ compose restart; ok "Перезапущено"; }
+cmd_stop(){ compose down; ok "Остановлено"; }
+cmd_start(){ compose up -d; ok "Запущено"; }
+cmd_rebuild(){ compose up -d --build; ok "Пересобрано и запущено"; }
+
+cmd_setport(){
+  local p="${2:-}"; [ -n "$p" ] || { read -rp "Новый порт веб-панели: " p; }
+  case "$p" in 80|443) err "Порт $p запрещён (80/443)"; exit 1;; esac
+  sed -i "s/^RPT_WEB_PORT=.*/RPT_WEB_PORT=$p/" "$ENV_FILE"
+  ok "Порт веб-панели изменён на $p. Применяю..."; compose up -d
+}
+cmd_setpass(){
+  local p="${2:-}"; [ -n "$p" ] || { read -rsp "Новый пароль администратора: " p; echo; }
+  sed -i "s/^RPT_ADMIN_PASSWORD=.*/RPT_ADMIN_PASSWORD=$p/" "$ENV_FILE"
+  ok "Пароль изменён. Применяю..."; compose up -d backend
+}
+
+menu(){ while :; do echo
+  say "${C_B}==== RPT server · меню ====${C_0}"
+  say " 1) Статус";        say " 2) Логи (все)";   say " 3) Логи backend"
+  say " 4) Перезапустить"; say " 5) Остановить";   say " 6) Запустить"
+  say " 7) Пересобрать";   say " 8) Сменить порт веб-панели"
+  say " 9) Сменить пароль администратора"; say " 0) Выход"
+  read -rp "Выбор: " ch
+  case "$ch" in
+    1) cmd_status;; 2) compose logs --tail=120;; 3) compose logs --tail=120 backend;;
+    4) cmd_restart;; 5) cmd_stop;; 6) cmd_start;; 7) cmd_rebuild;;
+    8) cmd_setport;; 9) cmd_setpass;; 0) exit 0;; *) warn "Неверный выбор";;
+  esac; done; }
+
+case "${1:-menu}" in
+  status) cmd_status;; url) cmd_url;; logs) cmd_logs "$@";;
+  restart) cmd_restart;; stop) cmd_stop;; start) cmd_start;; rebuild) cmd_rebuild;;
+  set-port) cmd_setport "$@";; set-password) cmd_setpass "$@";; menu) menu;;
+  help|-h|--help) echo "rptctl {status|url|logs|restart|stop|start|rebuild|set-port <p>|set-password}";;
+  *) err "Неизвестная команда: $1"; exit 1;;
+esac

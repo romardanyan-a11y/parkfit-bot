@@ -1,0 +1,44 @@
+services:
+  hub:
+    build: ./hub
+    container_name: rpt-hub
+    restart: unless-stopped
+    # Публичный порт SSH-хаба, к которому подключаются роботы. Меняется через .env.
+    ports:
+      - "${RPT_HUB_PORT:-2222}:22"
+    volumes:
+      - keys:/keys
+    networks:
+      - rptnet
+
+  backend:
+    build: ./backend
+    container_name: rpt-backend
+    restart: unless-stopped
+    # Порт веб-панели. НЕ 80 и НЕ 443. Меняется через .env (RPT_WEB_PORT).
+    ports:
+      - "${RPT_WEB_PORT:-8443}:8000"
+    environment:
+      RPT_ADMIN_PASSWORD: "${RPT_ADMIN_PASSWORD:-changeme}"
+      RPT_HUB_PUBLIC_HOST: "${RPT_HUB_PUBLIC_HOST:-}"
+      RPT_HUB_PORT: "${RPT_HUB_PORT:-2222}"
+      RPT_HUB_INTERNAL_HOST: "hub"
+      RPT_DB_PATH: "/data/rpt.db"
+      RPT_KEYS_DIR: "/keys"
+      RPT_PORT_START: "20000"
+      RPT_PORT_END: "20999"
+    volumes:
+      - keys:/keys
+      - data:/data
+    depends_on:
+      - hub
+    networks:
+      - rptnet
+
+volumes:
+  keys:
+  data:
+
+networks:
+  rptnet:
+    driver: bridge

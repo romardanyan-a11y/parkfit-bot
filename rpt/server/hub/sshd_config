@@ -1,0 +1,38 @@
+# RPT hub — SSH-сервер только для обратных туннелей от роботов.
+
+Port 22
+Protocol 2
+
+# Стабильный host key берётся из общего тома /keys (генерирует backend/entrypoint).
+HostKey /keys/ssh_host_ed25519_key
+
+# authorized_keys для rtunnel формирует backend (по одному активному роботу на строку).
+AuthorizedKeysFile /keys/authorized_keys
+
+# Только пользователь туннелей, только по ключу.
+AllowUsers rtunnel
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+PermitEmptyPasswords no
+KbdInteractiveAuthentication no
+
+# Разрешаем удалённый проброс портов (обратные туннели -R), запрещаем локальный.
+AllowTcpForwarding remote
+# clientspecified: робот сам просит bind 0.0.0.0, чтобы порт был виден backend-контейнеру.
+GatewayPorts clientspecified
+PermitTunnel no
+X11Forwarding no
+AllowAgentForwarding no
+PermitOpen none
+
+# Том /keys монтируется из вне — не проверяем владельца/права строго.
+StrictModes no
+
+# Держим соединение живым и быстро отсекаем мёртвые туннели.
+ClientAliveInterval 30
+ClientAliveCountMax 3
+TCPKeepAlive yes
+
+LogLevel INFO
+PidFile /run/sshd.pid

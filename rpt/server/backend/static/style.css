@@ -1,0 +1,106 @@
+:root{
+  --bg:#0e1116; --bg2:#151a22; --bg3:#1c232e; --line:#242c38;
+  --fg:#e6edf3; --muted:#8b98a9; --accent:#2f81f7; --accent2:#1f6feb;
+  --green:#2ea043; --red:#f85149; --amber:#d29922;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,sans-serif;font-size:14px}
+.hidden{display:none !important}
+button{cursor:pointer;font-family:inherit}
+.muted{color:var(--muted)}
+.err{color:var(--red);margin-top:8px;min-height:18px;font-size:13px}
+
+/* ---------- login ---------- */
+.login-screen{height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 30%,#182030,#0e1116)}
+.login-box{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:36px;width:340px;display:flex;flex-direction:column;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.logo{font-size:34px;font-weight:800;letter-spacing:4px;color:var(--accent)}
+.subtitle{color:var(--muted);margin:6px 0 24px}
+.login-box input{background:var(--bg);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:12px;margin-bottom:12px;font-size:15px}
+.login-box button{background:var(--accent2);border:none;color:#fff;padding:12px;border-radius:8px;font-size:15px;font-weight:600}
+.login-box button:hover{background:var(--accent)}
+
+/* ---------- layout ---------- */
+.app{display:flex;height:100vh}
+.sidebar{width:320px;min-width:320px;background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow-y:auto}
+.brand{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line)}
+.brand-logo{font-size:22px;font-weight:800;letter-spacing:3px;color:var(--accent)}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+
+.ghost{background:transparent;border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:7px 12px}
+.ghost:hover{background:var(--bg3);border-color:var(--accent)}
+.ghost.small{padding:4px 9px;font-size:12px}
+
+/* ---------- sync / pairing ---------- */
+.sync-block{padding:14px 16px;border-bottom:1px solid var(--line)}
+.sync-btn{width:100%;background:linear-gradient(90deg,#1f6feb,#388bfd);border:none;color:#fff;padding:11px;border-radius:9px;font-weight:600;font-size:14px}
+.sync-btn:hover{filter:brightness(1.1)}
+.pairing-info{margin-top:12px;background:var(--bg3);border:1px solid var(--accent);border-radius:9px;padding:12px;text-align:center}
+.pairing-info .code{font-size:30px;font-weight:800;letter-spacing:6px;color:var(--green);margin:4px 0}
+.pairing-info .hint{font-size:12px;color:var(--muted)}
+.pairing-info .timer{font-size:12px;color:var(--amber);margin-top:6px}
+
+/* ---------- sections ---------- */
+.section-title{padding:12px 16px 6px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+.count{color:var(--muted)}
+.pending-section{border-bottom:1px solid var(--line);padding-bottom:8px}
+.pending-item{margin:4px 12px;background:var(--bg3);border:1px solid var(--amber);border-radius:9px;padding:10px}
+.pending-item .p-name{font-weight:600}
+.pending-item .p-serial{font-size:12px;color:var(--muted)}
+.pending-item .p-actions{display:flex;gap:8px;margin-top:8px}
+.pending-item button{flex:1;border:none;border-radius:7px;padding:6px;font-size:13px;color:#fff}
+.btn-accept{background:var(--green)}
+.btn-reject{background:var(--red)}
+
+/* ---------- robot list ---------- */
+.robot-list{padding:4px 8px 20px}
+.robot-card{background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:12px;margin:6px 4px;transition:.15s}
+.robot-card:hover{border-color:var(--accent)}
+.robot-head{display:flex;align-items:center;gap:9px}
+.dot{width:11px;height:11px;border-radius:50%;flex:none;box-shadow:0 0 8px currentColor}
+.dot.on{background:var(--green);color:var(--green)}
+.dot.off{background:var(--red);color:var(--red)}
+.robot-name{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.robot-serial{font-size:12px;color:var(--muted);margin:2px 0 0 20px}
+.robot-notes{font-size:12px;color:var(--muted);margin:6px 0 0 20px;font-style:italic;white-space:pre-wrap}
+.robot-actions{display:flex;gap:6px;margin-top:10px}
+.robot-actions button{flex:1;border:none;border-radius:7px;padding:7px 0;font-size:12px;font-weight:600;color:#fff}
+.b-ssh{background:var(--accent2)} .b-ssh:hover{background:var(--accent)}
+.b-sftp{background:#6e40c9} .b-sftp:hover{filter:brightness(1.15)}
+.b-note{background:transparent;border:1px solid var(--line) !important;color:var(--fg) !important}
+.b-del{background:transparent;border:1px solid var(--red) !important;color:var(--red) !important;flex:none !important;padding:7px 10px !important}
+.b-note:hover{background:var(--bg2)} .b-del:hover{background:rgba(248,81,73,.15)}
+
+/* ---------- welcome / views ---------- */
+.welcome{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted)}
+.welcome-logo{font-size:64px;font-weight:800;letter-spacing:8px;color:var(--line)}
+.welcome-inner p{max-width:420px;margin:12px auto}
+
+.tab-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg2);border-bottom:1px solid var(--line)}
+.tab-header span{font-weight:600}
+.terminal-view,.sftp-view{flex:1;display:flex;flex-direction:column;min-height:0}
+.terminal{flex:1;padding:8px;background:#000;min-height:0}
+
+/* ---------- sftp ---------- */
+.sftp-actions{display:flex;gap:8px;align-items:center}
+.upload-label{display:inline-block;cursor:pointer}
+.sftp-path{padding:8px 16px;font-family:monospace;color:var(--accent);background:var(--bg);border-bottom:1px solid var(--line);overflow-x:auto;white-space:nowrap}
+.sftp-table{width:100%;border-collapse:collapse}
+.sftp-table th{text-align:left;padding:8px 16px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
+.sftp-table td{padding:8px 16px;border-bottom:1px solid var(--bg3)}
+.sftp-table tr:hover{background:var(--bg2)}
+.sftp-name{cursor:pointer}
+.sftp-name.dir{color:var(--accent);font-weight:600}
+.sftp-dl{color:var(--muted);cursor:pointer;margin-right:12px}
+.sftp-dl:hover{color:var(--fg)}
+.sftp-rm{color:var(--red);cursor:pointer}
+
+/* ---------- modal ---------- */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50}
+.modal-box{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:24px;width:420px}
+.modal-box h3{margin:0 0 16px}
+.modal-box input,.modal-box textarea{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;margin-bottom:12px;font-family:inherit;resize:vertical}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end}
+.modal-actions button{border:none;border-radius:8px;padding:9px 18px;color:#fff;background:var(--accent2)}
+.modal-actions .ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
