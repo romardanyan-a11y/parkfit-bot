@@ -20,7 +20,12 @@ fi
 
 # authorized_keys должен существовать (пусть даже пустой).
 touch /keys/authorized_keys
-chmod 600 /keys/ssh_host_ed25519_key /keys/authorized_keys || true
+# host key — приватный, читается root'ом при старте sshd -> 600.
+chmod 600 /keys/ssh_host_ed25519_key 2>/dev/null || true
+# authorized_keys sshd читает от имени пользователя rtunnel, поэтому файл должен
+# быть читаем этим пользователем (644), а каталог /keys — проходим (755).
+chmod 644 /keys/authorized_keys 2>/dev/null || true
+chmod 755 /keys 2>/dev/null || true
 
 # Alpine `adduser -D` создаёт rtunnel с заблокированным паролем ('!' в /etc/shadow),
 # из-за чего sshd отвергает вход ещё до проверки ключа:

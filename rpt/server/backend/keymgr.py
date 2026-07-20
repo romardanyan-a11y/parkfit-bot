@@ -36,9 +36,17 @@ def ensure_keys():
             check=True, capture_output=True,
         )
         os.chmod(HUB_HOST_KEY, 0o600)
+    # /keys должен быть проходим для пользователя rtunnel (sshd читает
+    # authorized_keys от его имени), поэтому 755.
+    try:
+        os.chmod(KEYS_DIR, 0o755)
+    except OSError:
+        pass
     if not os.path.exists(AUTHORIZED_KEYS):
         open(AUTHORIZED_KEYS, "a").close()
-        os.chmod(AUTHORIZED_KEYS, 0o600)
+        # 644: sshd (OpenSSH) читает authorized_keys, временно переключившись на
+        # uid пользователя rtunnel — файл обязан быть читаем этим пользователем.
+        os.chmod(AUTHORIZED_KEYS, 0o644)
 
 
 def admin_public_key():
@@ -73,5 +81,6 @@ def rebuild_authorized_keys(active_robots):
     tmp = AUTHORIZED_KEYS + ".tmp"
     with open(tmp, "w") as f:
         f.write("\n".join(lines) + ("\n" if lines else ""))
-    os.chmod(tmp, 0o600)
+    # 644 — файл читает sshd от имени пользователя rtunnel (см. ensure_keys).
+    os.chmod(tmp, 0o644)
     os.replace(tmp, AUTHORIZED_KEYS)
