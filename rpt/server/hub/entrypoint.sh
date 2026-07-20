@@ -22,5 +22,20 @@ fi
 touch /keys/authorized_keys
 chmod 600 /keys/ssh_host_ed25519_key /keys/authorized_keys || true
 
+# Alpine `adduser -D` создаёт rtunnel с заблокированным паролем ('!' в /etc/shadow),
+# из-за чего sshd отвергает вход ещё до проверки ключа:
+# "User rtunnel not allowed because account is locked".
+# Разблокируем аккаунт случайным паролем. Вход по паролю всё равно запрещён в
+# sshd_config (PasswordAuthentication no) — робот заходит только по ключу.
+if grep -q '^rtunnel:!' /etc/shadow 2>/dev/null; then
+    RTPW="$(head -c 12 /dev/urandom | base64)"
+    if printf '%s\n%s\n' "$RTPW" "$RTPW" | passwd rtunnel >/dev/null 2>&1; then
+        echo "[hub] аккаунт rtunnel разблокирован"
+    else
+        sed -i 's/^rtunnel:!/rtunnel:*/' /etc/shadow
+        echo "[hub] аккаунт rtunnel разблокирован (shadow)"
+    fi
+fi
+
 echo "[hub] запуск sshd на порту 22 (внутри контейнера)"
 exec /usr/sbin/sshd -D -e
