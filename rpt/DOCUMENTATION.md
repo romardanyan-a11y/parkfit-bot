@@ -185,6 +185,7 @@ sudo bash robot-install.sh
 | `rptctl restart`          | перезапустить сервер |
 | `rptctl stop` / `start`   | остановить / запустить |
 | `rptctl rebuild`          | пересобрать образы и запустить |
+| `rptctl update`           | обновить код из git-репозитория и пересобрать (данные и `.env` сохраняются) |
 | `rptctl set-port <порт>`  | сменить порт веб-панели (не 80/443) |
 | `rptctl set-password`     | сменить пароль администратора |
 

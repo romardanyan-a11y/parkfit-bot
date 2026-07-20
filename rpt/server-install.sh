@@ -81,6 +81,16 @@ RPT_HUB_PORT=$HUB_PORT
 RPT_HUB_PUBLIC_HOST=$PUBHOST
 RPT_ADMIN_PASSWORD=$ADMIN_PASS
 EOF
+
+# Источник для обновлений через `rptctl update` (если ставим из git-клона).
+REPO_URL="$(git -C "$SELF_DIR" config --get remote.origin.url 2>/dev/null || true)"
+REPO_BRANCH="$(git -C "$SELF_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [ -n "$REPO_URL" ]; then
+  {
+    echo "RPT_REPO_URL=$REPO_URL"
+    echo "RPT_REPO_BRANCH=${REPO_BRANCH:-main}"
+  } >> "$APP_DIR/.env"
+fi
 chmod 600 "$APP_DIR/.env"
 ok ".env создан"
 

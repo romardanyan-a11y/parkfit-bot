@@ -37,23 +37,55 @@ cmd_setpass(){
   ok "Пароль изменён. Применяю..."; compose up -d backend
 }
 
+set_env(){  # set_env KEY VALUE (добавить или заменить в .env)
+  if grep -qE "^$1=" "$ENV_FILE" 2>/dev/null; then
+    sed -i "s#^$1=.*#$1=$2#" "$ENV_FILE"
+  else
+    echo "$1=$2" >> "$ENV_FILE"
+  fi
+}
+cmd_update(){
+  # Обновляет код сервера из git и пересобирает. Данные (.env, docker-тома) целы.
+  local url branch src=/opt/rpt-src
+  url="$(get_env RPT_REPO_URL)"; branch="$(get_env RPT_REPO_BRANCH)"
+  if [ -z "$url" ]; then
+    read -rp "URL git-репозитория: " url
+    read -rp "Ветка [main]: " branch; branch="${branch:-main}"
+    [ -n "$url" ] || { err "URL не задан"; exit 1; }
+    set_env RPT_REPO_URL "$url"; set_env RPT_REPO_BRANCH "$branch"
+  fi
+  say "${C_B}Обновление из${C_0} $url ($branch)..."
+  if [ -d "$src/.git" ]; then
+    git -C "$src" fetch origin "$branch" && git -C "$src" reset --hard "origin/$branch"
+  else
+    git clone -b "$branch" "$url" "$src" || { err "git clone не удался"; exit 1; }
+  fi
+  # Копируем код поверх, .env не трогаем (в репозитории его нет)
+  cp -r "$src/rpt/server/." "$APP_DIR/"
+  # Обновляем саму консоль
+  cp "$APP_DIR/rptctl" /usr/local/bin/rptctl 2>/dev/null && chmod +x /usr/local/bin/rptctl
+  sed -i "s#RPT_SERVER_DIR:-/opt/rpt-server#RPT_SERVER_DIR:-$APP_DIR#" /usr/local/bin/rptctl 2>/dev/null || true
+  compose up -d --build
+  ok "Сервер обновлён до последней версии из репозитория"
+}
+
 menu(){ while :; do echo
   say "${C_B}==== RPT server · меню ====${C_0}"
   say " 1) Статус";        say " 2) Логи (все)";   say " 3) Логи backend"
   say " 4) Перезапустить"; say " 5) Остановить";   say " 6) Запустить"
   say " 7) Пересобрать";   say " 8) Сменить порт веб-панели"
-  say " 9) Сменить пароль администратора"; say " 0) Выход"
+  say " 9) Сменить пароль администратора"; say "10) Обновить из репозитория"; say " 0) Выход"
   read -rp "Выбор: " ch
   case "$ch" in
     1) cmd_status;; 2) compose logs --tail=120;; 3) compose logs --tail=120 backend;;
     4) cmd_restart;; 5) cmd_stop;; 6) cmd_start;; 7) cmd_rebuild;;
-    8) cmd_setport;; 9) cmd_setpass;; 0) exit 0;; *) warn "Неверный выбор";;
+    8) cmd_setport;; 9) cmd_setpass;; 10) cmd_update;; 0) exit 0;; *) warn "Неверный выбор";;
   esac; done; }
 
 case "${1:-menu}" in
   status) cmd_status;; url) cmd_url;; logs) cmd_logs "$@";;
   restart) cmd_restart;; stop) cmd_stop;; start) cmd_start;; rebuild) cmd_rebuild;;
-  set-port) cmd_setport "$@";; set-password) cmd_setpass "$@";; menu) menu;;
-  help|-h|--help) echo "rptctl {status|url|logs|restart|stop|start|rebuild|set-port <p>|set-password}";;
+  set-port) cmd_setport "$@";; set-password) cmd_setpass "$@";; update) cmd_update;; menu) menu;;
+  help|-h|--help) echo "rptctl {status|url|logs|restart|stop|start|rebuild|update|set-port <p>|set-password}";;
   *) err "Неизвестная команда: $1"; exit 1;;
 esac
