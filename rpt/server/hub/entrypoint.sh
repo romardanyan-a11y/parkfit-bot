@@ -37,5 +37,15 @@ if grep -q '^rtunnel:!' /etc/shadow 2>/dev/null; then
     fi
 fi
 
+# У rtunnel должен быть СУЩЕСТВУЮЩИЙ shell, иначе sshd отвергает вход:
+# "shell /usr/sbin/nologin does not exist". На Alpine путь к nologin другой.
+for _sh in /sbin/nologin /usr/sbin/nologin /bin/false; do
+    if [ -x "$_sh" ]; then
+        sed -i "s#^\(rtunnel:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:\).*#\1$_sh#" /etc/passwd
+        echo "[hub] shell rtunnel = $_sh"
+        break
+    fi
+done
+
 echo "[hub] запуск sshd на порту 22 (внутри контейнера)"
 exec /usr/sbin/sshd -D -e
