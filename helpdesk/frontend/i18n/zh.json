@@ -141,6 +141,7 @@
     "access": "部门访问权限",
     "role_admin": "管理员",
     "role_agent": "员工",
+    "role_observer": "观察员",
     "status_pending": "待审核",
     "status_approved": "已批准",
     "status_rejected": "已拒绝",
@@ -163,7 +164,23 @@
       "border": "边框",
       "sidebar": "侧边栏",
       "sidebar_text": "侧边栏文字"
-    }
+    },
+    "backup_title": "备份",
+    "backup_export": "立即下载备份",
+    "backup_import": "从文件恢复",
+    "backup_import_confirm": "恢复将用文件中的数据替换所有当前数据。是否继续？",
+    "backup_import_done": "已恢复",
+    "backup_auto": "自动备份",
+    "backup_enabled": "启用自动备份",
+    "backup_interval": "频率（小时）",
+    "backup_keep": "保留份数",
+    "backup_save": "保存设置",
+    "backup_now": "立即创建备份",
+    "backup_list": "已保存的备份",
+    "backup_download": "下载",
+    "backup_last": "上次备份",
+    "backup_never": "尚未创建",
+    "backup_none": "暂无备份"
   },
   "notifications": {
     "title": "通知",

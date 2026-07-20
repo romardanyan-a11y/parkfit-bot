@@ -7,8 +7,10 @@ from ..models import (
     Department,
     User,
     Notification,
+    ROLES,
     ROLE_ADMIN,
     ROLE_AGENT,
+    ROLE_OBSERVER,
     USER_APPROVED,
     USER_PENDING,
     USER_REJECTED,
@@ -35,7 +37,7 @@ def approve_user(user_id: int, data: ApproveIn, admin: User = Depends(get_curren
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user.status = USER_APPROVED
-    if data.role in (ROLE_ADMIN, ROLE_AGENT):
+    if data.role in ROLES:
         user.role = data.role
     if data.department_ids is not None:
         deps = db.query(Department).filter(Department.id.in_(data.department_ids)).all()
@@ -83,7 +85,7 @@ def set_role(user_id: int, data: ApproveIn, admin: User = Depends(get_current_ad
     user = db.query(User).get(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    if data.role not in (ROLE_ADMIN, ROLE_AGENT):
+    if data.role not in ROLES:
         raise HTTPException(status_code=400, detail="Bad role")
     user.role = data.role
     db.commit()

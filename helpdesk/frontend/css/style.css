@@ -228,6 +228,16 @@ tbody tr:hover { background: var(--bg); }
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .task-tags { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: middle; }
 
+/* ---------- Observer highlight ---------- */
+.observer-label {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #fef3c7; color: #92400e; border: 1px solid #fbbf24;
+  padding: 1px 8px; border-radius: 20px; font-weight: 600;
+}
+.observer-row { background: #fffbeb !important; }
+.observer-row:hover { background: #fef3c7 !important; }
+tbody tr.observer-row td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
+
 /* ---------- Checklist ---------- */
 .checklist-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
 .checklist-item:last-child { border-bottom: none; }

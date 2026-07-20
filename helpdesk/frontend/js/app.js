@@ -40,6 +40,21 @@ function fmtDay(s) {
   return d.toLocaleDateString(I18N.lang === "zh" ? "zh-CN" : I18N.lang === "en" ? "en-US" : "ru-RU");
 }
 
+// Render a user's name; observers are highlighted everywhere they appear.
+function userLabel(u) {
+  if (!u) return "—";
+  const name = esc(u.full_name || u.email);
+  if (u.role === "observer") {
+    return `<span class="observer-label" title="${t("admin.role_observer")}">👁 ${name}</span>`;
+  }
+  return name;
+}
+
+// Plain-text variant for <option> labels (no HTML rendering there).
+function userOptionText(u) {
+  return (u.role === "observer" ? "👁 " : "") + (u.full_name || u.email);
+}
+
 function applyPalette(p) {
   const r = document.documentElement.style;
   const map = {
@@ -416,7 +431,7 @@ function taskTable(tasks) {
           <td>${esc(task.title)}${tagChips(task.tags)}</td>
           <td><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
           <td><span class="pr-${task.priority}">${t("priority." + task.priority)}</span></td>
-          <td>${task.assignee ? esc(task.assignee.full_name || task.assignee.email) : `<span class="muted">${t("tasks.unassigned")}</span>`}</td>
+          <td>${task.assignee ? userLabel(task.assignee) : `<span class="muted">${t("tasks.unassigned")}</span>`}</td>
           <td>${task.due_date ? fmtDay(task.due_date) : "—"}</td>
         </tr>`).join("")}
       </tbody>
@@ -448,7 +463,7 @@ async function openTaskModal(dep, allTags) {
     <div class="row">
       <div class="field"><label>${t("tasks.assignee")}</label>
         <select id="t-assignee"><option value="">${t("tasks.unassigned")}</option>
-          ${assignees.map((a) => `<option value="${a.id}">${esc(a.full_name || a.email)}</option>`).join("")}</select></div>
+          ${assignees.map((a) => `<option value="${a.id}">${esc(userOptionText(a))}</option>`).join("")}</select></div>
       <div class="field"><label>${t("tasks.due_date")}</label><input id="t-due" type="date" /></div>
     </div>
     <div class="field"><label>${t("tasks.tags")}</label>
@@ -571,7 +586,7 @@ async function viewTaskDetail(main) {
         <div class="side-block">
           <h4>${t("tasks.assignee")}</h4>
           <select id="s-assignee"><option value="">${t("tasks.unassigned")}</option>
-            ${assignees.map((a) => `<option value="${a.id}" ${task.assignee && task.assignee.id === a.id ? "selected" : ""}>${esc(a.full_name || a.email)}</option>`).join("")}</select>
+            ${assignees.map((a) => `<option value="${a.id}" ${task.assignee && task.assignee.id === a.id ? "selected" : ""}>${esc(userOptionText(a))}</option>`).join("")}</select>
         </div>
         <div class="side-block">
           <h4>${t("tasks.due_date")}</h4>
@@ -593,7 +608,7 @@ async function viewTaskDetail(main) {
           </div>
         </div>
         <div class="side-block">
-          <div class="kv"><span class="k">${t("tasks.author")}</span><span>${task.author ? esc(task.author.full_name || task.author.email) : "—"}</span></div>
+          <div class="kv"><span class="k">${t("tasks.author")}</span><span>${userLabel(task.author)}</span></div>
           <div class="kv"><span class="k">${t("tasks.created")}</span><span>${fmtDate(task.created_at)}</span></div>
           <div class="kv"><span class="k">${t("tasks.updated")}</span><span>${fmtDate(task.updated_at)}</span></div>
         </div>
@@ -700,7 +715,7 @@ function renderComments(comments) {
   return comments.map((c) => `
     <div class="comment">
       <div class="head">
-        <span class="author">${c.author ? esc(c.author.full_name || c.author.email) : "—"}</span>
+        <span class="author">${userLabel(c.author)}</span>
         <span class="time">${fmtDate(c.created_at)}</span>
       </div>
       <div class="body">${esc(c.body)}</div>
@@ -723,7 +738,7 @@ function renderHistory(events) {
     if (e.kind === "status") detail = translatePair(detail, "status");
     else if (e.kind === "priority") detail = translatePair(detail, "priority");
     else if (e.kind === "type") detail = translatePair(detail, "type");
-    return `<div class="hist-item">${fmtDate(e.created_at)} — <b>${e.actor ? esc(e.actor.full_name || e.actor.email) : "—"}</b> ${t("event." + e.kind)} ${detail ? `<span class="muted">${esc(detail)}</span>` : ""}</div>`;
+    return `<div class="hist-item">${fmtDate(e.created_at)} — <b>${userLabel(e.actor)}</b> ${t("event." + e.kind)} ${detail ? `<span class="muted">${esc(detail)}</span>` : ""}</div>`;
   }).join("");
 }
 
@@ -823,6 +838,7 @@ function openApproveModal(user, deps) {
     <div class="field"><label>${t("admin.role")}</label>
       <select id="ap-role">
         <option value="agent">${t("admin.role_agent")}</option>
+        <option value="observer">${t("admin.role_observer")}</option>
         <option value="admin">${t("admin.role_admin")}</option>
       </select></div>
     <div class="field"><label>${t("admin.select_departments")}</label>
@@ -851,10 +867,10 @@ async function viewUsers(main) {
     <div class="panel"><table>
       <thead><tr><th>${t("login.email")}</th><th>${t("login.full_name")}</th><th>${t("admin.role")}</th><th>${t("tasks.status")}</th><th>${t("admin.access")}</th><th></th></tr></thead>
       <tbody>${users.map((u) => `
-        <tr style="cursor:default">
-          <td>${esc(u.email)}</td>
+        <tr style="cursor:default" class="${u.role === "observer" ? "observer-row" : ""}">
+          <td>${u.role === "observer" ? userLabel(u) : esc(u.email)}</td>
           <td>${esc(u.full_name || "")}</td>
-          <td>${t("admin.role_" + (u.role === "admin" ? "admin" : "agent"))}</td>
+          <td>${t("admin.role_" + u.role)}</td>
           <td><span class="badge st-${u.status === "approved" ? "resolved" : u.status === "pending" ? "need_info" : "closed"}">${t("admin.status_" + u.status)}</span></td>
           <td class="muted">${u.department_ids.map(depName).map(esc).join(", ") || "—"}</td>
           <td style="white-space:nowrap">
@@ -876,6 +892,7 @@ function openAccessModal(user, deps) {
     <div class="field"><label>${t("admin.role")}</label>
       <select id="ac-role">
         <option value="agent" ${user.role === "agent" ? "selected" : ""}>${t("admin.role_agent")}</option>
+        <option value="observer" ${user.role === "observer" ? "selected" : ""}>${t("admin.role_observer")}</option>
         <option value="admin" ${user.role === "admin" ? "selected" : ""}>${t("admin.role_admin")}</option>
       </select></div>
     <div class="field"><label>${t("admin.select_departments")}</label>
@@ -939,6 +956,103 @@ async function viewSettings(main) {
     state.view = "settings";
     renderMain();
   };
+
+  await renderBackupSection(main);
+}
+
+// ---------- Admin: backups / export / import ----------
+async function renderBackupSection(main) {
+  const cfg = await API.get("/api/admin/backup/config");
+  const files = cfg.backups || [];
+
+  const html = `
+    <div class="section" style="max-width:760px;margin-top:20px">
+      <h2 style="margin:0 0 16px;font-size:18px">${t("admin.backup_title")}</h2>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+        <button class="btn" id="bk-export">⬇ ${t("admin.backup_export")}</button>
+        <button class="btn secondary" id="bk-run">${t("admin.backup_now")}</button>
+        <label class="btn secondary" style="cursor:pointer;margin:0">
+          ⬆ ${t("admin.backup_import")}
+          <input type="file" id="bk-import" accept="application/json,.json" style="display:none" />
+        </label>
+      </div>
+
+      <h4 style="margin:0 0 12px">${t("admin.backup_auto")}</h4>
+      <div class="chip-check" style="margin-bottom:12px">
+        <input type="checkbox" id="bk-enabled" ${cfg.enabled ? "checked" : ""} />
+        <label for="bk-enabled">${t("admin.backup_enabled")}</label>
+      </div>
+      <div class="row">
+        <div class="field"><label>${t("admin.backup_interval")}</label>
+          <input type="number" id="bk-interval" min="1" value="${cfg.interval_hours}" /></div>
+        <div class="field"><label>${t("admin.backup_keep")}</label>
+          <input type="number" id="bk-keep" min="1" value="${cfg.keep}" /></div>
+      </div>
+      <div style="margin-bottom:8px" class="muted">${t("admin.backup_last")}: ${cfg.last_backup_at ? fmtDate(cfg.last_backup_at) : t("admin.backup_never")}</div>
+      <button class="btn" id="bk-save">${t("admin.backup_save")}</button>
+
+      <h4 style="margin:22px 0 10px">${t("admin.backup_list")}</h4>
+      <div id="bk-list">${renderBackupList(files)}</div>
+    </div>`;
+  main.insertAdjacentHTML("beforeend", html);
+
+  $("#bk-export").onclick = () => downloadWithAuth("/api/admin/backup/export", "helpdesk-export.json");
+  $("#bk-run").onclick = async () => { await API.post("/api/admin/backup/run"); state.view = "settings"; renderMain(); };
+  $("#bk-save").onclick = async () => {
+    await API.put("/api/admin/backup/config", {
+      enabled: $("#bk-enabled").checked,
+      interval_hours: parseInt($("#bk-interval").value) || 24,
+      keep: parseInt($("#bk-keep").value) || 14,
+    });
+    state.view = "settings";
+    renderMain();
+  };
+  $("#bk-import").onchange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (!confirm(t("admin.backup_import_confirm"))) { e.target.value = ""; return; }
+    try {
+      const res = await API.upload("/api/admin/backup/import", f);
+      alert(`${t("admin.backup_import_done")}: ${JSON.stringify(res.restored)}`);
+      logout(); // data (incl. users) replaced — force a fresh login
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  document.querySelectorAll("[data-bkfile]").forEach((a) =>
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      const name = a.dataset.bkfile;
+      downloadWithAuth(`/api/admin/backup/download/${encodeURIComponent(name)}`, name);
+    }));
+}
+
+function renderBackupList(files) {
+  if (!files.length) return `<div class="muted">${t("admin.backup_none")}</div>`;
+  return `<div class="panel"><table>
+    <tbody>${files.map((f) => `
+      <tr style="cursor:default">
+        <td class="mono">${esc(f.name)}</td>
+        <td class="muted">${(f.size / 1024).toFixed(0)} KB</td>
+        <td>${fmtDate(f.created_at)}</td>
+        <td><a class="btn secondary small" href="#" data-bkfile="${esc(f.name)}">${t("admin.backup_download")}</a></td>
+      </tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
+// Download a protected endpoint by fetching with the auth header as a blob.
+async function downloadWithAuth(url, fallbackName) {
+  const res = await fetch(url, { headers: { Authorization: "Bearer " + API.token } });
+  if (!res.ok) return alert(t("common.error"));
+  const blob = await res.blob();
+  const cd = res.headers.get("Content-Disposition") || "";
+  const m = cd.match(/filename="?([^"]+)"?/);
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = m ? m[1] : fallbackName;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 // ---------------------------------------------------------------------------

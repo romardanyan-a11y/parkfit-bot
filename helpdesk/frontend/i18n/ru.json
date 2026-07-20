@@ -141,6 +141,7 @@
     "access": "Доступ к подразделениям",
     "role_admin": "Администратор",
     "role_agent": "Сотрудник",
+    "role_observer": "Наблюдатель",
     "status_pending": "Ожидает",
     "status_approved": "Подтверждён",
     "status_rejected": "Отклонён",
@@ -163,7 +164,23 @@
       "border": "Границы",
       "sidebar": "Боковая панель",
       "sidebar_text": "Текст боковой панели"
-    }
+    },
+    "backup_title": "Резервные копии",
+    "backup_export": "Скачать копию сейчас",
+    "backup_import": "Восстановить из файла",
+    "backup_import_confirm": "Восстановление ЗАМЕНИТ все текущие данные данными из файла. Продолжить?",
+    "backup_import_done": "Восстановлено",
+    "backup_auto": "Автоматические копии",
+    "backup_enabled": "Включить автобэкап",
+    "backup_interval": "Частота (часов)",
+    "backup_keep": "Хранить копий",
+    "backup_save": "Сохранить настройки",
+    "backup_now": "Создать копию сейчас",
+    "backup_list": "Сохранённые копии",
+    "backup_download": "Скачать",
+    "backup_last": "Последняя копия",
+    "backup_never": "ещё не создавалась",
+    "backup_none": "Копий пока нет"
   },
   "notifications": {
     "title": "Уведомления",

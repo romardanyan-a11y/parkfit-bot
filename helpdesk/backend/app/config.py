@@ -19,6 +19,9 @@ class Settings:
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "/data/uploads")
     MAX_UPLOAD_MB: int = int(os.getenv("MAX_UPLOAD_MB", "20"))
 
+    # Automatic backups
+    BACKUP_DIR: str = os.getenv("BACKUP_DIR", "/data/backups")
+
     # --- Email (SMTP) notifications ---
     # Leave SMTP_HOST empty to disable email entirely (the app still works,
     # in-app notifications keep functioning).

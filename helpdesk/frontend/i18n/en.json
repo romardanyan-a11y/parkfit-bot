@@ -141,6 +141,7 @@
     "access": "Department access",
     "role_admin": "Administrator",
     "role_agent": "Agent",
+    "role_observer": "Observer",
     "status_pending": "Pending",
     "status_approved": "Approved",
     "status_rejected": "Rejected",
@@ -163,7 +164,23 @@
       "border": "Borders",
       "sidebar": "Sidebar",
       "sidebar_text": "Sidebar text"
-    }
+    },
+    "backup_title": "Backups",
+    "backup_export": "Download backup now",
+    "backup_import": "Restore from file",
+    "backup_import_confirm": "Restoring will REPLACE all current data with the file's data. Continue?",
+    "backup_import_done": "Restored",
+    "backup_auto": "Automatic backups",
+    "backup_enabled": "Enable auto-backup",
+    "backup_interval": "Frequency (hours)",
+    "backup_keep": "Keep copies",
+    "backup_save": "Save settings",
+    "backup_now": "Create backup now",
+    "backup_list": "Saved backups",
+    "backup_download": "Download",
+    "backup_last": "Last backup",
+    "backup_never": "not created yet",
+    "backup_none": "No backups yet"
   },
   "notifications": {
     "title": "Notifications",

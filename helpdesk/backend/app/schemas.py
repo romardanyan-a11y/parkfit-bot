@@ -128,6 +128,7 @@ class UserMini(BaseModel):
     id: int
     email: str
     full_name: str
+    role: str = "agent"
 
     class Config:
         from_attributes = True

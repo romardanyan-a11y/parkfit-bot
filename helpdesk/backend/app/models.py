@@ -19,8 +19,9 @@ from .database import Base
 # Roles / statuses (kept as plain strings so they are easy to extend)
 # ---------------------------------------------------------------------------
 ROLE_ADMIN = "admin"
-ROLE_AGENT = "agent"   # regular approved user who works on tickets
-ROLES = (ROLE_ADMIN, ROLE_AGENT)
+ROLE_AGENT = "agent"        # regular approved user who works on tickets
+ROLE_OBSERVER = "observer"  # highlighted "watcher" account, shown everywhere
+ROLES = (ROLE_ADMIN, ROLE_AGENT, ROLE_OBSERVER)
 
 USER_PENDING = "pending"
 USER_APPROVED = "approved"
