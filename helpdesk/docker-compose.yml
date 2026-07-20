@@ -1,0 +1,33 @@
+services:
+  web:
+    build: .
+    container_name: helpdesk_web
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # Default: SQLite stored on the mounted volume (zero external deps).
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/helpdesk.db}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-please}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@helpdesk.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin12345}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - helpdesk_data:/data
+
+  # Optional PostgreSQL. To use it, set in .env:
+  #   DATABASE_URL=postgresql+psycopg2://helpdesk:helpdesk@db:5432/helpdesk
+  # and uncomment the "depends_on" above plus this service.
+  # db:
+  #   image: postgres:16-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: helpdesk
+  #     POSTGRES_PASSWORD: helpdesk
+  #     POSTGRES_DB: helpdesk
+  #   volumes:
+  #     - helpdesk_pg:/var/lib/postgresql/data
+
+volumes:
+  helpdesk_data:
+  # helpdesk_pg:
