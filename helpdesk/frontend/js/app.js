@@ -262,10 +262,12 @@ function renderShell() {
     nav.push({ key: "settings", label: t("nav.settings") });
   }
 
+  const appName = esc(state.settings.app_name || "HelpDesk");
   app().innerHTML = `
-    <div class="layout">
+    <div class="layout" id="layout">
+      <div class="nav-backdrop" id="nav-backdrop"></div>
       <aside class="sidebar">
-        <div class="brand">${esc(state.settings.app_name || "HelpDesk")}</div>
+        <div class="brand">${appName}</div>
         <nav>
           ${nav.map((n) => `
             <a class="nav-item ${state.view === n.key ? "active" : ""}" data-view="${n.key}">
@@ -279,11 +281,22 @@ function renderShell() {
           <div style="padding:8px 12px;font-size:12px;opacity:0.7">${esc(state.me.email)}</div>
         </div>
       </aside>
-      <main class="main" id="main"></main>
+      <div class="content">
+        <header class="mobile-topbar">
+          <button class="hamburger" id="nav-toggle" aria-label="menu">☰</button>
+          <span class="mtb-title">${appName}</span>
+        </header>
+        <main class="main" id="main"></main>
+      </div>
     </div>`;
 
+  const layout = document.getElementById("layout");
+  const closeDrawer = () => layout.classList.remove("nav-open");
+  $("#nav-toggle").addEventListener("click", () => layout.classList.toggle("nav-open"));
+  $("#nav-backdrop").addEventListener("click", closeDrawer);
+
   document.querySelectorAll("[data-view]").forEach((el) =>
-    el.addEventListener("click", () => { state.view = el.dataset.view; state.currentDept = null; state.currentTask = null; renderMain(); }));
+    el.addEventListener("click", () => { closeDrawer(); state.view = el.dataset.view; state.currentDept = null; state.currentTask = null; renderMain(); }));
   $("[data-logout]").addEventListener("click", logout);
   wireLangSwitcher();
   renderMain();
@@ -463,12 +476,12 @@ function taskTable(tasks) {
       </tr></thead>
       <tbody>${tasks.map((task) => `
         <tr data-task="${task.id}">
-          <td class="mono">${esc(task.key)}</td>
-          <td>${esc(task.title)}${tagChips(task.tags)}</td>
-          <td><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
-          <td><span class="pr-${task.priority}">${t("priority." + task.priority)}</span></td>
-          <td>${task.assignee ? userLabel(task.assignee) : `<span class="muted">${t("tasks.unassigned")}</span>`}</td>
-          <td>${task.due_date ? fmtDay(task.due_date) : "—"}</td>
+          <td class="mono" data-label="${t("tasks.key")}">${esc(task.key)}</td>
+          <td data-label="${t("tasks.task_title")}">${esc(task.title)}${tagChips(task.tags)}</td>
+          <td data-label="${t("tasks.status")}"><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
+          <td data-label="${t("tasks.priority")}"><span class="pr-${task.priority}">${t("priority." + task.priority)}</span></td>
+          <td data-label="${t("tasks.assignee")}">${task.assignee ? userLabel(task.assignee) : `<span class="muted">${t("tasks.unassigned")}</span>`}</td>
+          <td data-label="${t("tasks.due_date")}">${task.due_date ? fmtDay(task.due_date) : "—"}</td>
         </tr>`).join("")}
       </tbody>
     </table></div>`;
@@ -825,11 +838,11 @@ async function viewArchive(main) {
         <thead><tr><th>${t("tasks.key")}</th><th>${t("tasks.task_title")}</th><th>${t("catalog.title")}</th><th>${t("tasks.status")}</th><th>${t("tasks.updated")}</th></tr></thead>
         <tbody>${all.map((task) => `
           <tr data-task="${task.id}">
-            <td class="mono">${esc(task.key)}</td>
-            <td>${esc(task.title)}</td>
-            <td>${esc(task._dep.name)}</td>
-            <td><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
-            <td>${fmtDate(task.updated_at)}</td>
+            <td class="mono" data-label="${t("tasks.key")}">${esc(task.key)}</td>
+            <td data-label="${t("tasks.task_title")}">${esc(task.title)}</td>
+            <td data-label="${t("catalog.title")}">${esc(task._dep.name)}</td>
+            <td data-label="${t("tasks.status")}"><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
+            <td data-label="${t("tasks.updated")}">${fmtDate(task.updated_at)}</td>
           </tr>`).join("")}</tbody>
       </table></div>`}`;
   document.querySelectorAll("[data-task]").forEach((row) =>
@@ -904,12 +917,12 @@ async function viewUsers(main) {
       <thead><tr><th>${t("login.email")}</th><th>${t("login.full_name")}</th><th>${t("admin.role")}</th><th>${t("tasks.status")}</th><th>${t("admin.access")}</th><th></th></tr></thead>
       <tbody>${users.map((u) => `
         <tr style="cursor:default" class="${u.role === "observer" ? "observer-row" : ""}">
-          <td>${u.role === "observer" ? userLabel(u) : esc(u.email)}</td>
-          <td>${esc(u.full_name || "")}</td>
-          <td>${t("admin.role_" + u.role)}</td>
-          <td><span class="badge st-${u.status === "approved" ? "resolved" : u.status === "pending" ? "need_info" : "closed"}">${t("admin.status_" + u.status)}</span></td>
-          <td class="muted">${u.department_ids.map(depName).map(esc).join(", ") || "—"}</td>
-          <td style="white-space:nowrap">
+          <td data-label="${t("login.email")}">${u.role === "observer" ? userLabel(u) : esc(u.email)}</td>
+          <td data-label="${t("login.full_name")}">${esc(u.full_name || "")}</td>
+          <td data-label="${t("admin.role")}">${t("admin.role_" + u.role)}</td>
+          <td data-label="${t("tasks.status")}"><span class="badge st-${u.status === "approved" ? "resolved" : u.status === "pending" ? "need_info" : "closed"}">${t("admin.status_" + u.status)}</span></td>
+          <td class="muted" data-label="${t("admin.access")}">${u.department_ids.map(depName).map(esc).join(", ") || "—"}</td>
+          <td data-label="" style="white-space:nowrap;flex-wrap:wrap;justify-content:flex-end">
             <button class="btn secondary small" data-access="${u.id}">${t("admin.access")}</button>
             <button class="btn secondary small" data-resetpw="${u.id}">${t("admin.reset_password")}</button>
             ${u.id !== state.me.id ? `<button class="btn danger small" data-deluser="${u.id}">${t("common.delete")}</button>` : ""}
@@ -1105,10 +1118,10 @@ function renderBackupList(files) {
   return `<div class="panel"><table>
     <tbody>${files.map((f) => `
       <tr style="cursor:default">
-        <td class="mono">${esc(f.name)}</td>
-        <td class="muted">${(f.size / 1024).toFixed(0)} KB</td>
-        <td>${fmtDate(f.created_at)}</td>
-        <td><a class="btn secondary small" href="#" data-bkfile="${esc(f.name)}">${t("admin.backup_download")}</a></td>
+        <td class="mono" data-label="">${esc(f.name)}</td>
+        <td class="muted" data-label="">${(f.size / 1024).toFixed(0)} KB</td>
+        <td data-label="">${fmtDate(f.created_at)}</td>
+        <td data-label=""><a class="btn secondary small" href="#" data-bkfile="${esc(f.name)}">${t("admin.backup_download")}</a></td>
       </tr>`).join("")}</tbody>
   </table></div>`;
 }
