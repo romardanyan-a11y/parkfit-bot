@@ -14,6 +14,8 @@ from ..models import (
     USER_REJECTED,
 )
 from ..schemas import UserOut, ApproveIn, AccessIn, UserMini
+from ..mailer import send_email
+from ..config import settings
 from .auth import user_to_out
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -40,6 +42,11 @@ def approve_user(user_id: int, data: ApproveIn, admin: User = Depends(get_curren
         user.departments = deps
     db.commit()
     db.refresh(user)
+    send_email(
+        user.email,
+        "[HelpDesk] Your account has been approved",
+        f"Your access request has been approved.\n\nSign in: {settings.APP_BASE_URL}/",
+    )
     return user_to_out(user)
 
 
@@ -51,6 +58,11 @@ def reject_user(user_id: int, admin: User = Depends(get_current_admin), db: Sess
     user.status = USER_REJECTED
     db.commit()
     db.refresh(user)
+    send_email(
+        user.email,
+        "[HelpDesk] Registration request declined",
+        "Unfortunately your access request has been declined.",
+    )
     return user_to_out(user)
 
 

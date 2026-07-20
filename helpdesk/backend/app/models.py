@@ -40,6 +40,14 @@ user_department_access = Table(
     Column("department_id", Integer, ForeignKey("departments.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# Association: tags attached to a task (Tracker-style labels).
+task_tags = Table(
+    "task_tags",
+    Base.metadata,
+    Column("task_id", Integer, ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class User(Base):
     __tablename__ = "users"
@@ -108,6 +116,37 @@ class Task(Base):
     comments = relationship("Comment", back_populates="task", cascade="all, delete-orphan")
     attachments = relationship("Attachment", back_populates="task", cascade="all, delete-orphan")
     history = relationship("TaskEvent", back_populates="task", cascade="all, delete-orphan")
+    tags = relationship("Tag", secondary=task_tags, back_populates="tasks")
+    checklist = relationship(
+        "ChecklistItem",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="ChecklistItem.position",
+    )
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), unique=True, nullable=False)
+    color = Column(String(20), default="#6b7280")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tasks = relationship("Task", secondary=task_tags, back_populates="tags")
+
+
+class ChecklistItem(Base):
+    __tablename__ = "checklist_items"
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"))
+    text = Column(String(1000), nullable=False)
+    is_done = Column(Boolean, default=False)
+    position = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    task = relationship("Task", back_populates="checklist")
 
 
 class Comment(Base):

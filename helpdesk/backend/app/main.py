@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from .config import settings
 from .database import Base, engine, SessionLocal
 from .seed import seed_admin
-from .routers import auth, departments, tasks, comments, admin, notifications, settings as settings_router
+from .routers import auth, departments, tasks, comments, admin, notifications, tags, settings as settings_router
 
 app = FastAPI(title="HelpDesk", version="1.0.0")
 
@@ -26,6 +26,7 @@ app.include_router(tasks.router)
 app.include_router(comments.router)
 app.include_router(admin.router)
 app.include_router(notifications.router)
+app.include_router(tags.router)
 app.include_router(settings_router.router)
 
 

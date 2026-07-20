@@ -9,6 +9,8 @@ from ..models import (
     Department,
     Task,
     TaskEvent,
+    Tag,
+    ChecklistItem,
     User,
     Notification,
     ROLE_ADMIN,
@@ -16,10 +18,48 @@ from ..models import (
     TASK_PRIORITIES,
     TASK_TYPES,
 )
-from ..schemas import TaskIn, TaskOut, TaskUpdateIn, TaskDetailOut
+from ..schemas import (
+    TaskIn,
+    TaskOut,
+    TaskUpdateIn,
+    TaskDetailOut,
+    ChecklistItemIn,
+    ChecklistItemUpdate,
+    ChecklistItemOut,
+)
+from ..mailer import send_email
+from ..config import settings
 from .departments import visible_department_ids
 
 router = APIRouter(prefix="/api", tags=["tasks"])
+
+
+def apply_tags(db: Session, task: Task, tag_ids):
+    if tag_ids is None:
+        return
+    task.tags = db.query(Tag).filter(Tag.id.in_(tag_ids)).all() if tag_ids else []
+
+
+def notify_assignee(db: Session, task: Task, assignee_id: int, actor: User):
+    """In-app notification + email when a task is assigned to someone else."""
+    if not assignee_id or assignee_id == actor.id:
+        return
+    assignee = db.query(User).get(assignee_id)
+    if not assignee:
+        return
+    db.add(Notification(
+        recipient_id=assignee.id,
+        kind="task_assigned",
+        title="Task assigned to you",
+        body=f"{task.key}: {task.title}",
+        payload=str(task.id),
+    ))
+    link = f"{settings.APP_BASE_URL}/"
+    send_email(
+        assignee.email,
+        f"[HelpDesk] {task.key}: {task.title}",
+        f"You have been assigned to task {task.key} — {task.title}.\n\nOpen HelpDesk: {link}",
+    )
 
 
 def ensure_department_access(user: User, dep_id: int):
@@ -44,7 +84,10 @@ def list_tasks(
     dep_id: int,
     archived: bool = Query(False),
     status: str | None = None,
+    priority: str | None = None,
+    type: str | None = None,
     assignee_id: int | None = None,
+    tag_id: int | None = None,
     q: str | None = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -53,8 +96,14 @@ def list_tasks(
     query = db.query(Task).filter(Task.department_id == dep_id, Task.archived == archived)
     if status:
         query = query.filter(Task.status == status)
+    if priority:
+        query = query.filter(Task.priority == priority)
+    if type:
+        query = query.filter(Task.type == type)
     if assignee_id:
         query = query.filter(Task.assignee_id == assignee_id)
+    if tag_id:
+        query = query.filter(Task.tags.any(Tag.id == tag_id))
     if q:
         like = f"%{q}%"
         query = query.filter((Task.title.ilike(like)) | (Task.description.ilike(like)) | (Task.key.ilike(like)))
@@ -87,9 +136,11 @@ def create_task(dep_id: int, data: TaskIn, user: User = Depends(get_current_user
     )
     db.add(task)
     db.flush()
+    apply_tags(db, task, data.tag_ids)
     log_event(db, task, user, "created", "")
     if data.assignee_id:
         log_event(db, task, user, "assignee", f"->{data.assignee_id}")
+        notify_assignee(db, task, data.assignee_id, user)
     db.commit()
     db.refresh(task)
     return task
@@ -139,10 +190,15 @@ def update_task(task_id: int, data: TaskUpdateIn, user: User = Depends(get_curre
     if data.assignee_id is not None and data.assignee_id != task.assignee_id:
         log_event(db, task, user, "assignee", f"{task.assignee_id}->{data.assignee_id}")
         task.assignee_id = data.assignee_id or None
+        notify_assignee(db, task, task.assignee_id, user)
 
     if data.due_date is not None and data.due_date != task.due_date:
         log_event(db, task, user, "due_date", str(data.due_date))
         task.due_date = data.due_date
+
+    if data.tag_ids is not None:
+        apply_tags(db, task, data.tag_ids)
+        log_event(db, task, user, "tags", "")
 
     db.commit()
     db.refresh(task)
@@ -193,3 +249,54 @@ def restore_task(task_id: int, user: User = Depends(get_current_user), db: Sessi
     db.commit()
     db.refresh(task)
     return task
+
+
+# ---------------------------------------------------------------------------
+# Checklist (sub-tasks inside a ticket, Tracker-style)
+# ---------------------------------------------------------------------------
+def _load_task_for_checklist(db: Session, task_id: int, user: User) -> Task:
+    task = db.query(Task).get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    ensure_department_access(user, task.department_id)
+    return task
+
+
+@router.post("/tasks/{task_id}/checklist", response_model=ChecklistItemOut)
+def add_checklist_item(task_id: int, data: ChecklistItemIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    task = _load_task_for_checklist(db, task_id, user)
+    text = data.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Empty item")
+    max_pos = db.query(ChecklistItem).filter(ChecklistItem.task_id == task.id).count()
+    item = ChecklistItem(task_id=task.id, text=text, position=max_pos)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.put("/checklist/{item_id}", response_model=ChecklistItemOut)
+def update_checklist_item(item_id: int, data: ChecklistItemUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    item = db.query(ChecklistItem).get(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _load_task_for_checklist(db, item.task_id, user)
+    if data.text is not None:
+        item.text = data.text.strip() or item.text
+    if data.is_done is not None:
+        item.is_done = data.is_done
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.delete("/checklist/{item_id}")
+def delete_checklist_item(item_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    item = db.query(ChecklistItem).get(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _load_task_for_checklist(db, item.task_id, user)
+    db.delete(item)
+    db.commit()
+    return {"ok": True}

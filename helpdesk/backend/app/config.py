@@ -19,5 +19,22 @@ class Settings:
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "/data/uploads")
     MAX_UPLOAD_MB: int = int(os.getenv("MAX_UPLOAD_MB", "20"))
 
+    # --- Email (SMTP) notifications ---
+    # Leave SMTP_HOST empty to disable email entirely (the app still works,
+    # in-app notifications keep functioning).
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_TLS: bool = os.getenv("SMTP_TLS", "true").lower() in ("1", "true", "yes")
+    SMTP_SSL: bool = os.getenv("SMTP_SSL", "false").lower() in ("1", "true", "yes")
+    MAIL_FROM: str = os.getenv("MAIL_FROM", "helpdesk@localhost")
+    # Public base URL used to build links inside emails.
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "http://localhost:8000")
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.SMTP_HOST)
+
 
 settings = Settings()

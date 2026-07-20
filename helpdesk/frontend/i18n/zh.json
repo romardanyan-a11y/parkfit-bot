@@ -85,7 +85,18 @@
     "no_comments": "暂无评论",
     "no_attachments": "暂无附件",
     "key": "编号",
-    "save_changes": "保存更改"
+    "save_changes": "保存更改",
+    "tags": "标签",
+    "add_tag": "添加标签",
+    "new_tag": "新建标签…",
+    "no_tags": "暂无标签",
+    "checklist": "清单",
+    "add_item": "添加项目…",
+    "no_checklist": "暂无项目",
+    "filter_tag": "标签",
+    "filter_priority": "优先级",
+    "filter_type": "类型",
+    "reset_filters": "重置"
   },
   "status": {
     "open": "待处理",
@@ -116,7 +127,8 @@
     "type": "更改了类型",
     "due_date": "更改了截止日期",
     "comment": "添加了评论",
-    "attachment": "上传了文件"
+    "attachment": "上传了文件",
+    "tags": "更改了标签"
   },
   "admin": {
     "users_title": "用户",

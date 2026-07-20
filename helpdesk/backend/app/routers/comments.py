@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import Task, Comment, Attachment, User
+from ..models import Task, Comment, Attachment, User, Notification
 from ..schemas import CommentIn, CommentOut, AttachmentOut
+from ..mailer import send_email_many
 from .tasks import ensure_department_access, log_event
 
 router = APIRouter(prefix="/api", tags=["comments"])
@@ -31,8 +32,27 @@ def add_comment(task_id: int, data: CommentIn, user: User = Depends(get_current_
     comment = Comment(task_id=task.id, author_id=user.id, body=data.body)
     db.add(comment)
     log_event(db, task, user, "comment", "")
+
+    # Notify the other interested parties (assignee + author) except the commenter.
+    recipients = []
+    for u in (task.assignee, task.author):
+        if u and u.id != user.id:
+            recipients.append(u)
+            db.add(Notification(
+                recipient_id=u.id,
+                kind="task_comment",
+                title=f"New comment on {task.key}",
+                body=data.body[:200],
+                payload=str(task.id),
+            ))
     db.commit()
     db.refresh(comment)
+
+    send_email_many(
+        [u.email for u in recipients],
+        f"[HelpDesk] New comment on {task.key}: {task.title}",
+        f"{user.full_name or user.email} commented:\n\n{data.body}",
+    )
     return comment
 
 

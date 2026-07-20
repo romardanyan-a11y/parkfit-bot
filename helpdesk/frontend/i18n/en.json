@@ -85,7 +85,18 @@
     "no_comments": "No comments yet",
     "no_attachments": "No attachments",
     "key": "Key",
-    "save_changes": "Save changes"
+    "save_changes": "Save changes",
+    "tags": "Tags",
+    "add_tag": "Add tag",
+    "new_tag": "New tag…",
+    "no_tags": "No tags",
+    "checklist": "Checklist",
+    "add_item": "Add item…",
+    "no_checklist": "No items yet",
+    "filter_tag": "Tag",
+    "filter_priority": "Priority",
+    "filter_type": "Type",
+    "reset_filters": "Reset"
   },
   "status": {
     "open": "Open",
@@ -116,7 +127,8 @@
     "type": "changed the type",
     "due_date": "changed the due date",
     "comment": "added a comment",
-    "attachment": "attached a file"
+    "attachment": "attached a file",
+    "tags": "changed tags"
   },
   "admin": {
     "users_title": "Users",

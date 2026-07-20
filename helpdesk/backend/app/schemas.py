@@ -70,6 +70,39 @@ class DepartmentOut(BaseModel):
 
 
 # ---------- Tasks ----------
+class TagIn(BaseModel):
+    name: str
+    color: Optional[str] = "#6b7280"
+
+
+class TagOut(BaseModel):
+    id: int
+    name: str
+    color: str
+
+    class Config:
+        from_attributes = True
+
+
+class ChecklistItemIn(BaseModel):
+    text: str
+
+
+class ChecklistItemUpdate(BaseModel):
+    text: Optional[str] = None
+    is_done: Optional[bool] = None
+
+
+class ChecklistItemOut(BaseModel):
+    id: int
+    text: str
+    is_done: bool
+    position: int
+
+    class Config:
+        from_attributes = True
+
+
 class TaskIn(BaseModel):
     title: str
     description: Optional[str] = ""
@@ -77,6 +110,7 @@ class TaskIn(BaseModel):
     type: Optional[str] = "task"
     assignee_id: Optional[int] = None
     due_date: Optional[datetime] = None
+    tag_ids: Optional[List[int]] = None
 
 
 class TaskUpdateIn(BaseModel):
@@ -87,6 +121,7 @@ class TaskUpdateIn(BaseModel):
     type: Optional[str] = None
     assignee_id: Optional[int] = None
     due_date: Optional[datetime] = None
+    tag_ids: Optional[List[int]] = None
 
 
 class UserMini(BaseModel):
@@ -149,6 +184,7 @@ class TaskOut(BaseModel):
     archived: bool
     created_at: datetime
     updated_at: datetime
+    tags: List[TagOut] = []
 
     class Config:
         from_attributes = True
@@ -158,6 +194,7 @@ class TaskDetailOut(TaskOut):
     comments: List[CommentOut] = []
     attachments: List[AttachmentOut] = []
     history: List[EventOut] = []
+    checklist: List[ChecklistItemOut] = []
 
 
 # ---------- Notifications ----------

@@ -210,6 +210,37 @@ tbody tr:hover { background: var(--bg); }
 .color-field input[type=color] { width: 46px; height: 38px; padding: 2px; cursor: pointer; }
 .color-field .cf-label { flex: 1; }
 
+/* ---------- Tags ---------- */
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  color: #fff; white-space: nowrap;
+}
+.tag-chip .x { cursor: pointer; opacity: 0.8; font-weight: 700; }
+.tag-chip .x:hover { opacity: 1; }
+.tag-toggle {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+}
+.tag-toggle.on { color: #fff; border-color: transparent; }
+.tag-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.task-tags { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: middle; }
+
+/* ---------- Checklist ---------- */
+.checklist-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.checklist-item:last-child { border-bottom: none; }
+.checklist-item input[type=checkbox] { width: 18px; height: 18px; flex-shrink: 0; }
+.checklist-item .ci-text { flex: 1; }
+.checklist-item .ci-text.done { text-decoration: line-through; color: var(--muted); }
+.checklist-item .ci-del { cursor: pointer; color: var(--muted); border: none; background: none; font-size: 16px; }
+.checklist-item .ci-del:hover { color: #dc2626; }
+.progress-bar { height: 6px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 4px 0 12px; }
+.progress-bar > span { display: block; height: 100%; background: var(--primary); transition: width 0.2s; }
+.add-inline { display: flex; gap: 8px; margin-top: 10px; }
+.add-inline input { flex: 1; }
+
 @media (max-width: 780px) {
   .detail-grid { grid-template-columns: 1fr; }
   .sidebar { width: 64px; }

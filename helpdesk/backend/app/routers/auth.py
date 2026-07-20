@@ -7,6 +7,7 @@ from ..deps import get_current_user
 from ..models import User, Notification, USER_APPROVED, USER_PENDING, ROLE_ADMIN, ROLE_AGENT
 from ..schemas import RegisterIn, TokenOut, UserOut, LanguageIn
 from ..security import hash_password, verify_password, create_access_token
+from ..mailer import send_email_many
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -55,6 +56,13 @@ def register(data: RegisterIn, db: Session = Depends(get_db)):
             payload=str(user.id),
         ))
     db.commit()
+
+    send_email_many(
+        [a.email for a in admins],
+        "[HelpDesk] New registration request",
+        f"{user.full_name or user.email} ({user.email}) requested access.\n\n"
+        f"Message: {user.description or '-'}\n\nApprove or reject in the Administration section.",
+    )
     return user_to_out(user)
 
 

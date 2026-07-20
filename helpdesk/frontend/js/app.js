@@ -337,13 +337,22 @@ function openDeptModal(dep) {
 }
 
 // ---------- Department (task list) ----------
+function currentFilters() {
+  if (!state._filters) state._filters = { q: "", status: "", priority: "", type: "", tag: "" };
+  return state._filters;
+}
+
 async function viewDepartment(main) {
   const dep = state.currentDept;
-  const search = state._search || "";
-  const statusFilter = state._statusFilter || "";
+  const f = currentFilters();
+  const allTags = await API.get("/api/tags");
+
   let url = `/api/departments/${dep.id}/tasks?archived=false`;
-  if (statusFilter) url += `&status=${statusFilter}`;
-  if (search) url += `&q=${encodeURIComponent(search)}`;
+  if (f.status) url += `&status=${f.status}`;
+  if (f.priority) url += `&priority=${f.priority}`;
+  if (f.type) url += `&type=${f.type}`;
+  if (f.tag) url += `&tag_id=${f.tag}`;
+  if (f.q) url += `&q=${encodeURIComponent(f.q)}`;
   const tasks = await API.get(url);
 
   main.innerHTML = `
@@ -355,19 +364,42 @@ async function viewDepartment(main) {
       <button class="btn" id="new-task">+ ${t("tasks.new_task")}</button>
     </div>
     <div class="toolbar">
-      <input id="f-search" placeholder="${t("common.search")}" value="${esc(search)}" style="min-width:200px" />
+      <input id="f-search" placeholder="${t("common.search")}" value="${esc(f.q)}" style="min-width:180px" />
       <select id="f-status">
         <option value="">${t("tasks.filter_status")}: ${t("common.all")}</option>
-        ${STATUSES.map((s) => `<option value="${s}" ${s === statusFilter ? "selected" : ""}>${t("status." + s)}</option>`).join("")}
+        ${STATUSES.map((s) => `<option value="${s}" ${s === f.status ? "selected" : ""}>${t("status." + s)}</option>`).join("")}
       </select>
+      <select id="f-priority">
+        <option value="">${t("tasks.filter_priority")}: ${t("common.all")}</option>
+        ${PRIORITIES.map((p) => `<option value="${p}" ${p === f.priority ? "selected" : ""}>${t("priority." + p)}</option>`).join("")}
+      </select>
+      <select id="f-type">
+        <option value="">${t("tasks.filter_type")}: ${t("common.all")}</option>
+        ${TYPES.map((x) => `<option value="${x}" ${x === f.type ? "selected" : ""}>${t("type." + x)}</option>`).join("")}
+      </select>
+      <select id="f-tag">
+        <option value="">${t("tasks.filter_tag")}: ${t("common.all")}</option>
+        ${allTags.map((tg) => `<option value="${tg.id}" ${String(tg.id) === String(f.tag) ? "selected" : ""}>${esc(tg.name)}</option>`).join("")}
+      </select>
+      <button class="btn secondary small" id="f-reset">${t("tasks.reset_filters")}</button>
     </div>
     ${taskTable(tasks)}`;
 
-  $("#back-cat").onclick = () => { state.currentDept = null; state._search = ""; state._statusFilter = ""; renderMain(); };
-  $("#new-task").onclick = () => openTaskModal(dep);
-  $("#f-search").addEventListener("keydown", (e) => { if (e.key === "Enter") { state._search = e.target.value; renderMain(); } });
-  $("#f-status").onchange = (e) => { state._statusFilter = e.target.value; renderMain(); };
+  $("#back-cat").onclick = () => { state.currentDept = null; state._filters = null; renderMain(); };
+  $("#new-task").onclick = () => openTaskModal(dep, allTags);
+  $("#f-search").addEventListener("keydown", (e) => { if (e.key === "Enter") { f.q = e.target.value; renderMain(); } });
+  $("#f-status").onchange = (e) => { f.status = e.target.value; renderMain(); };
+  $("#f-priority").onchange = (e) => { f.priority = e.target.value; renderMain(); };
+  $("#f-type").onchange = (e) => { f.type = e.target.value; renderMain(); };
+  $("#f-tag").onchange = (e) => { f.tag = e.target.value; renderMain(); };
+  $("#f-reset").onclick = () => { state._filters = null; renderMain(); };
   wireTaskRows(tasks);
+}
+
+function tagChips(tags) {
+  if (!tags || !tags.length) return "";
+  return `<span class="task-tags">${tags.map((tg) =>
+    `<span class="tag-chip" style="background:${esc(tg.color)}">${esc(tg.name)}</span>`).join("")}</span>`;
 }
 
 function taskTable(tasks) {
@@ -381,7 +413,7 @@ function taskTable(tasks) {
       <tbody>${tasks.map((task) => `
         <tr data-task="${task.id}">
           <td class="mono">${esc(task.key)}</td>
-          <td>${esc(task.title)}</td>
+          <td>${esc(task.title)}${tagChips(task.tags)}</td>
           <td><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
           <td><span class="pr-${task.priority}">${t("priority." + task.priority)}</span></td>
           <td>${task.assignee ? esc(task.assignee.full_name || task.assignee.email) : `<span class="muted">${t("tasks.unassigned")}</span>`}</td>
@@ -400,8 +432,9 @@ function wireTaskRows(tasks) {
     }));
 }
 
-async function openTaskModal(dep) {
+async function openTaskModal(dep, allTags) {
   const assignees = await API.get(`/api/admin/assignees?dep_id=${dep.id}`);
+  if (!allTags) allTags = await API.get("/api/tags");
   openModal(`
     <h3>${t("tasks.new_task")}</h3>
     <div class="field"><label>${t("tasks.task_title")}</label><input id="t-title" /></div>
@@ -418,14 +451,23 @@ async function openTaskModal(dep) {
           ${assignees.map((a) => `<option value="${a.id}">${esc(a.full_name || a.email)}</option>`).join("")}</select></div>
       <div class="field"><label>${t("tasks.due_date")}</label><input id="t-due" type="date" /></div>
     </div>
+    <div class="field"><label>${t("tasks.tags")}</label>
+      <div class="tag-row" id="t-tags">
+        ${allTags.length ? allTags.map((tg) => `
+          <span class="tag-toggle" data-tag="${tg.id}" data-color="${esc(tg.color)}"><span class="tag-dot" style="background:${esc(tg.color)}"></span>${esc(tg.name)}</span>`).join("")
+        : `<span class="muted">${t("tasks.no_tags")}</span>`}
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn secondary" data-close>${t("common.cancel")}</button>
       <button class="btn" id="t-save">${t("common.create")}</button>
     </div>`);
+  wireTagToggles();
   $("#t-save").onclick = async () => {
     const title = $("#t-title").value.trim();
     if (!title) return;
     const due = $("#t-due").value;
+    const tagIds = [...document.querySelectorAll("#t-tags .tag-toggle.on")].map((e) => parseInt(e.dataset.tag));
     await API.post(`/api/departments/${dep.id}/tasks`, {
       title,
       description: $("#t-desc").value.trim(),
@@ -433,10 +475,21 @@ async function openTaskModal(dep) {
       type: $("#t-type").value,
       assignee_id: $("#t-assignee").value ? parseInt($("#t-assignee").value) : null,
       due_date: due ? new Date(due).toISOString() : null,
+      tag_ids: tagIds,
     });
     closeModal();
     renderMain();
   };
+}
+
+// Toggle chip on/off with its own color when active.
+function wireTagToggles() {
+  document.querySelectorAll(".tag-toggle[data-tag]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const on = el.classList.toggle("on");
+      el.style.background = on ? el.dataset.color : "";
+    });
+  });
 }
 
 // ---------- Task detail ----------
@@ -444,6 +497,8 @@ async function viewTaskDetail(main) {
   const task = state.currentTask;
   const dep = state.currentDept || { id: task.department_id };
   const assignees = await API.get(`/api/admin/assignees?dep_id=${task.department_id}`);
+  const allTags = await API.get("/api/tags");
+  const taskTagIds = new Set((task.tags || []).map((tg) => tg.id));
   const backLabel = state.view === "archive" ? t("nav.archive") : (state.currentDept ? esc(state.currentDept.name) : t("nav.catalog"));
 
   main.innerHTML = `
@@ -467,6 +522,16 @@ async function viewTaskDetail(main) {
           <label>${t("tasks.task_desc")}</label>
           <textarea id="e-desc" style="min-height:120px">${esc(task.description || "")}</textarea>
           <div style="margin-top:12px"><button class="btn small" id="save-desc">${t("tasks.save_changes")}</button></div>
+        </div>
+
+        <div class="section">
+          <h4>${t("tasks.checklist")} <span class="muted" id="cl-count"></span></h4>
+          <div class="progress-bar"><span id="cl-progress"></span></div>
+          <div id="checklist">${renderChecklist(task.checklist)}</div>
+          <div class="add-inline">
+            <input id="ci-text" placeholder="${t("tasks.add_item")}" />
+            <button class="btn small" id="ci-add">+</button>
+          </div>
         </div>
 
         <div class="section">
@@ -513,6 +578,21 @@ async function viewTaskDetail(main) {
           <input type="date" id="s-due" value="${task.due_date ? new Date(task.due_date).toISOString().slice(0, 10) : ""}" />
         </div>
         <div class="side-block">
+          <h4>${t("tasks.tags")}</h4>
+          <div class="tag-row" id="d-tags">
+            ${allTags.length ? allTags.map((tg) => `
+              <span class="tag-toggle ${taskTagIds.has(tg.id) ? "on" : ""}" data-tag="${tg.id}" data-color="${esc(tg.color)}"
+                    style="${taskTagIds.has(tg.id) ? `background:${esc(tg.color)}` : ""}">
+                <span class="tag-dot" style="background:${esc(tg.color)}"></span>${esc(tg.name)}</span>`).join("")
+            : `<span class="muted">${t("tasks.no_tags")}</span>`}
+          </div>
+          <div class="add-inline">
+            <input id="d-newtag" placeholder="${t("tasks.new_tag")}" />
+            <input type="color" id="d-newtag-color" value="#6b7280" style="width:38px;padding:2px" />
+            <button class="btn small" id="d-addtag">+</button>
+          </div>
+        </div>
+        <div class="side-block">
           <div class="kv"><span class="k">${t("tasks.author")}</span><span>${task.author ? esc(task.author.full_name || task.author.email) : "—"}</span></div>
           <div class="kv"><span class="k">${t("tasks.created")}</span><span>${fmtDate(task.created_at)}</span></div>
           <div class="kv"><span class="k">${t("tasks.updated")}</span><span>${fmtDate(task.updated_at)}</span></div>
@@ -554,6 +634,65 @@ async function viewTaskDetail(main) {
     try { await API.upload(`/api/tasks/${task.id}/attachments`, f); reload(); }
     catch (err) { alert(err.message); }
   };
+
+  // ----- Checklist -----
+  updateChecklistProgress(task.checklist);
+  $("#ci-add").onclick = async () => {
+    const text = $("#ci-text").value.trim();
+    if (!text) return;
+    await API.post(`/api/tasks/${task.id}/checklist`, { text });
+    reload();
+  };
+  $("#ci-text").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#ci-add").click(); });
+  document.querySelectorAll("[data-ci]").forEach((cb) =>
+    cb.addEventListener("change", async () => {
+      await API.put(`/api/checklist/${cb.dataset.ci}`, { is_done: cb.checked });
+      reload();
+    }));
+  document.querySelectorAll("[data-cidel]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await API.del(`/api/checklist/${b.dataset.cidel}`);
+      reload();
+    }));
+
+  // ----- Tags -----
+  async function saveTags() {
+    const ids = [...document.querySelectorAll("#d-tags .tag-toggle.on")].map((e) => parseInt(e.dataset.tag));
+    await API.put(`/api/tasks/${task.id}`, { tag_ids: ids });
+    reload();
+  }
+  document.querySelectorAll("#d-tags .tag-toggle[data-tag]").forEach((el) =>
+    el.addEventListener("click", () => { el.classList.toggle("on"); saveTags(); }));
+  $("#d-addtag").onclick = async () => {
+    const name = $("#d-newtag").value.trim();
+    if (!name) return;
+    const tag = await API.post("/api/tags", { name, color: $("#d-newtag-color").value });
+    // attach the new tag to this task right away
+    const ids = [...document.querySelectorAll("#d-tags .tag-toggle.on")].map((e) => parseInt(e.dataset.tag));
+    if (!ids.includes(tag.id)) ids.push(tag.id);
+    await API.put(`/api/tasks/${task.id}`, { tag_ids: ids });
+    reload();
+  };
+  $("#d-newtag").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#d-addtag").click(); });
+}
+
+function renderChecklist(items) {
+  if (!items || !items.length) return `<div class="muted">${t("tasks.no_checklist")}</div>`;
+  return items.map((it) => `
+    <div class="checklist-item">
+      <input type="checkbox" data-ci="${it.id}" ${it.is_done ? "checked" : ""} />
+      <span class="ci-text ${it.is_done ? "done" : ""}">${esc(it.text)}</span>
+      <button class="ci-del" data-cidel="${it.id}" title="${t("common.delete")}">✕</button>
+    </div>`).join("");
+}
+
+function updateChecklistProgress(items) {
+  const total = (items || []).length;
+  const done = (items || []).filter((i) => i.is_done).length;
+  const bar = document.getElementById("cl-progress");
+  const cnt = document.getElementById("cl-count");
+  if (bar) bar.style.width = total ? (done / total * 100) + "%" : "0%";
+  if (cnt) cnt.textContent = total ? `${done}/${total}` : "";
 }
 
 function renderComments(comments) {
