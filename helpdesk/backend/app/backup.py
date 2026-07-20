@@ -108,6 +108,7 @@ def build_export(db, include_files: bool = True) -> dict:
             "id": u.id, "email": u.email, "password_hash": u.password_hash,
             "full_name": u.full_name, "description": u.description, "role": u.role,
             "status": u.status, "preferred_language": u.preferred_language,
+            "must_change_password": bool(u.must_change_password),
             "created_at": _dt(u.created_at),
             "department_ids": [d.id for d in u.departments],
         } for u in users],
@@ -186,6 +187,7 @@ def restore_import(db, data: dict) -> dict:
             full_name=u.get("full_name", ""), description=u.get("description", ""),
             role=u.get("role", "agent"), status=u.get("status", "approved"),
             preferred_language=u.get("preferred_language", "ru"),
+            must_change_password=u.get("must_change_password", False),
             created_at=_pdt(u.get("created_at")),
         ))
     # Tags

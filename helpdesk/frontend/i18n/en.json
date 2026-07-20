@@ -148,6 +148,12 @@
     "select_departments": "Select departments",
     "save_access": "Save access",
     "delete_user": "Delete user",
+    "reset_password": "Reset password",
+    "reset_password_title": "Reset password",
+    "temp_password_hint": "Empty = generate automatically",
+    "temp_password_generated": "Temporary password set. Give it to the user:",
+    "copy": "Copy",
+    "copied": "Copied",
     "settings_title": "Appearance & palette",
     "app_name": "System name",
     "palette": "Color palette",
@@ -187,5 +193,14 @@
     "empty": "No notifications",
     "mark_all_read": "Mark all as read",
     "registration_request": "New registration request"
+  },
+  "password": {
+    "force_title": "Change temporary password",
+    "force_message": "You signed in with a temporary password. To continue, please set a new permanent password.",
+    "new": "New password",
+    "confirm": "Repeat new password",
+    "save": "Save and continue",
+    "mismatch": "Passwords do not match",
+    "too_short": "Password must be at least 6 characters"
   }
 }

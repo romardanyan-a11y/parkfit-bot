@@ -31,6 +31,7 @@ class UserOut(BaseModel):
     role: str
     status: str
     preferred_language: str
+    must_change_password: bool = False
     created_at: datetime
     department_ids: List[int] = []
 
@@ -40,6 +41,15 @@ class UserOut(BaseModel):
 
 class LanguageIn(BaseModel):
     language: str
+
+
+class ChangePasswordIn(BaseModel):
+    new_password: str
+
+
+class ResetPasswordIn(BaseModel):
+    # Admin may supply a temporary password; if omitted/short, one is generated.
+    password: Optional[str] = None
 
 
 class ApproveIn(BaseModel):

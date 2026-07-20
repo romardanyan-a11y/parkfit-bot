@@ -15,10 +15,20 @@ from ..models import (
     USER_PENDING,
     USER_REJECTED,
 )
-from ..schemas import UserOut, ApproveIn, AccessIn, UserMini
+import secrets
+import string
+
+from ..schemas import UserOut, ApproveIn, AccessIn, UserMini, ResetPasswordIn
 from ..mailer import send_email
+from ..security import hash_password
 from ..config import settings
 from .auth import user_to_out
+
+
+def _generate_temp_password(length: int = 10) -> str:
+    # Readable temp password: letters + digits, no ambiguous chars.
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -91,6 +101,28 @@ def set_role(user_id: int, data: ApproveIn, admin: User = Depends(get_current_ad
     db.commit()
     db.refresh(user)
     return user_to_out(user)
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_password(user_id: int, data: ResetPasswordIn, admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Set a temporary password for a user; they must change it on next login."""
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    temp = (data.password or "").strip()
+    if len(temp) < 6:
+        temp = _generate_temp_password()
+    user.password_hash = hash_password(temp)
+    user.must_change_password = True
+    db.commit()
+    send_email(
+        user.email,
+        "[HelpDesk] Your password was reset",
+        f"An administrator set a temporary password for your account: {temp}\n\n"
+        f"Sign in and you will be asked to choose a new password.\n{settings.APP_BASE_URL}/",
+    )
+    # Returned so the admin can pass the temporary password to the user.
+    return {"ok": True, "temp_password": temp, "email": user.email}
 
 
 @router.delete("/users/{user_id}")

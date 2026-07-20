@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from sqlalchemy import inspect, text
 
 from .config import settings
 from .database import Base, engine, SessionLocal
@@ -43,6 +44,7 @@ def on_startup():
     os.makedirs(settings.BACKUP_DIR, exist_ok=True)
 
     Base.metadata.create_all(bind=engine)
+    ensure_schema()
     db = SessionLocal()
     try:
         seed_admin(db)
@@ -51,6 +53,17 @@ def on_startup():
 
     # Background thread that writes automatic backups on the configured schedule.
     start_scheduler()
+
+
+def ensure_schema():
+    """Minimal additive migrations for columns added after first release."""
+    insp = inspect(engine)
+    cols = {c["name"] for c in insp.get_columns("users")}
+    if "must_change_password" not in cols:
+        # Added nullable (no default) so it works on both SQLite and Postgres;
+        # NULL reads as falsy in Python, new rows get False via the ORM default.
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN"))
 
 
 @app.get("/api/health")

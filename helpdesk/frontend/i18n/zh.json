@@ -148,6 +148,12 @@
     "select_departments": "选择部门",
     "save_access": "保存权限",
     "delete_user": "删除用户",
+    "reset_password": "重置密码",
+    "reset_password_title": "重置密码",
+    "temp_password_hint": "留空 = 自动生成",
+    "temp_password_generated": "临时密码已设置，请交给用户：",
+    "copy": "复制",
+    "copied": "已复制",
     "settings_title": "外观与配色",
     "app_name": "系统名称",
     "palette": "配色方案",
@@ -187,5 +193,14 @@
     "empty": "暂无通知",
     "mark_all_read": "全部标为已读",
     "registration_request": "新的注册申请"
+  },
+  "password": {
+    "force_title": "更改临时密码",
+    "force_message": "您使用临时密码登录。请设置新的永久密码以继续。",
+    "new": "新密码",
+    "confirm": "再次输入新密码",
+    "save": "保存并继续",
+    "mismatch": "两次输入的密码不一致",
+    "too_short": "密码至少需要 6 个字符"
   }
 }

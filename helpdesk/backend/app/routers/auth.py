@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import User, Notification, USER_APPROVED, USER_PENDING, ROLE_ADMIN, ROLE_AGENT
-from ..schemas import RegisterIn, TokenOut, UserOut, LanguageIn
+from ..schemas import RegisterIn, TokenOut, UserOut, LanguageIn, ChangePasswordIn
 from ..security import hash_password, verify_password, create_access_token
 from ..mailer import send_email_many
 
@@ -21,6 +21,7 @@ def user_to_out(user: User) -> dict:
         "role": user.role,
         "status": user.status,
         "preferred_language": user.preferred_language or "ru",
+        "must_change_password": bool(user.must_change_password),
         "created_at": user.created_at,
         "department_ids": [d.id for d in user.departments],
     }
@@ -90,6 +91,18 @@ def set_language(data: LanguageIn, user: User = Depends(get_current_user), db: S
     if data.language not in ("ru", "en", "zh"):
         raise HTTPException(status_code=400, detail="Unsupported language")
     user.preferred_language = data.language
+    db.commit()
+    db.refresh(user)
+    return user_to_out(user)
+
+
+@router.put("/me/password", response_model=UserOut)
+def change_password(data: ChangePasswordIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Set a new permanent password (used for the forced temp-password change)."""
+    if len(data.new_password or "") < 6:
+        raise HTTPException(status_code=400, detail="Password too short (min 6)")
+    user.password_hash = hash_password(data.new_password)
+    user.must_change_password = False
     db.commit()
     db.refresh(user)
     return user_to_out(user)

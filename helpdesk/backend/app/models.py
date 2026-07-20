@@ -61,6 +61,9 @@ class User(Base):
     role = Column(String(20), default=ROLE_AGENT)
     status = Column(String(20), default=USER_PENDING)  # pending / approved / rejected
     preferred_language = Column(String(5), default="ru")
+    # When True, the user is forced to set a new password on next login
+    # (used after an admin resets it to a temporary one).
+    must_change_password = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     departments = relationship(

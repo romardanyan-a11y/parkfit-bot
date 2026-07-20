@@ -120,7 +120,43 @@ async function boot() {
 // ---------------------------------------------------------------------------
 function render() {
   if (!state.me) return renderAuth();
+  // A user with a temporary password is trapped on this screen until they set
+  // a permanent one — every render routes here, so it cannot be skipped.
+  if (state.me.must_change_password) return renderForcePassword();
   renderShell();
+}
+
+// ---------- Forced password change (temporary password) ----------
+function renderForcePassword() {
+  app().innerHTML = `
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <h1>${esc(state.settings.app_name || "HelpDesk")}</h1>
+        <div class="sub">${t("password.force_title")}</div>
+        <div class="msg info">${t("password.force_message")}</div>
+        <div id="fp-msg"></div>
+        <div class="field"><label>${t("password.new")}</label><input id="fp-new" type="password" autocomplete="new-password" /></div>
+        <div class="field"><label>${t("password.confirm")}</label><input id="fp-confirm" type="password" autocomplete="new-password" /></div>
+        <button class="btn" id="fp-save" style="width:100%;justify-content:center">${t("password.save")}</button>
+        ${langSwitcher("auth-lang")}
+      </div>
+    </div>`;
+  wireLangSwitcher();
+  const submit = async () => {
+    const p1 = $("#fp-new").value, p2 = $("#fp-confirm").value;
+    const err = (msg) => { $("#fp-msg").innerHTML = `<div class="msg error">${esc(msg)}</div>`; };
+    if (p1.length < 6) return err(t("password.too_short"));
+    if (p1 !== p2) return err(t("password.mismatch"));
+    try {
+      state.me = await API.put("/api/auth/me/password", { new_password: p1 });
+      state.view = "catalog";
+      render();
+    } catch (e) {
+      err(e.message || t("common.error"));
+    }
+  };
+  $("#fp-save").onclick = submit;
+  $("#fp-confirm").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
 }
 
 // ---------- Auth ----------
@@ -875,6 +911,7 @@ async function viewUsers(main) {
           <td class="muted">${u.department_ids.map(depName).map(esc).join(", ") || "—"}</td>
           <td style="white-space:nowrap">
             <button class="btn secondary small" data-access="${u.id}">${t("admin.access")}</button>
+            <button class="btn secondary small" data-resetpw="${u.id}">${t("admin.reset_password")}</button>
             ${u.id !== state.me.id ? `<button class="btn danger small" data-deluser="${u.id}">${t("common.delete")}</button>` : ""}
           </td>
         </tr>`).join("")}</tbody>
@@ -882,8 +919,43 @@ async function viewUsers(main) {
 
   document.querySelectorAll("[data-access]").forEach((b) =>
     b.onclick = () => openAccessModal(users.find((u) => u.id == b.dataset.access), deps));
+  document.querySelectorAll("[data-resetpw]").forEach((b) =>
+    b.onclick = () => openResetPasswordModal(users.find((u) => u.id == b.dataset.resetpw)));
   document.querySelectorAll("[data-deluser]").forEach((b) =>
     b.onclick = async () => { if (confirm(t("common.confirm_delete"))) { await API.del(`/api/admin/users/${b.dataset.deluser}`); renderMain(); } });
+}
+
+function openResetPasswordModal(user) {
+  openModal(`
+    <h3>${t("admin.reset_password_title")}: ${esc(user.email)}</h3>
+    <div class="field">
+      <label>${t("admin.temp_password_hint")}</label>
+      <input id="rp-pass" placeholder="${t("admin.temp_password_hint")}" autocomplete="off" />
+    </div>
+    <div id="rp-result"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" data-close>${t("common.cancel")}</button>
+      <button class="btn" id="rp-save">${t("admin.reset_password")}</button>
+    </div>`);
+  $("#rp-save").onclick = async () => {
+    const val = $("#rp-pass").value.trim();
+    const res = await API.post(`/api/admin/users/${user.id}/reset-password`, { password: val || null });
+    $("#rp-result").innerHTML = `
+      <div class="msg info">${t("admin.temp_password_generated")}
+        <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
+          <b style="font-size:18px;font-family:ui-monospace,monospace">${esc(res.temp_password)}</b>
+          <button class="btn secondary small" id="rp-copy">${t("admin.copy")}</button>
+        </div>
+      </div>`;
+    $("#rp-copy").onclick = () => {
+      if (navigator.clipboard) navigator.clipboard.writeText(res.temp_password);
+      $("#rp-copy").textContent = t("admin.copied");
+    };
+    // Turn the primary button into a "done" action.
+    const save = $("#rp-save");
+    save.textContent = t("common.close");
+    save.onclick = () => closeModal();
+  };
 }
 
 function openAccessModal(user, deps) {
