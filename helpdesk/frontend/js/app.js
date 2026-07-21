@@ -560,7 +560,10 @@ async function viewDepartment(main) {
         <a class="link-btn" id="back-cat">← ${t("nav.catalog")}</a>
         <h2 style="margin-top:6px">${esc(dep.name)}</h2>
       </div>
-      <button class="btn" id="new-task">+ ${t("tasks.new_task")}</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn secondary" id="manage-tags">🏷 ${t("tasks.create_tag")}</button>
+        <button class="btn" id="new-task">+ ${t("tasks.new_task")}</button>
+      </div>
     </div>
     <div class="toolbar">
       <input id="f-search" placeholder="${t("common.search")}" value="${esc(f.q)}" style="min-width:180px" />
@@ -586,6 +589,7 @@ async function viewDepartment(main) {
 
   $("#back-cat").onclick = () => { state.currentDept = null; state._filters = null; renderMain(); };
   $("#new-task").onclick = () => openTaskModal(dep, allTags);
+  $("#manage-tags").onclick = () => openTagsModal();
   $("#f-search").addEventListener("keydown", (e) => { if (e.key === "Enter") { f.q = e.target.value; renderMain(); } });
   $("#f-status").onchange = (e) => { f.status = e.target.value; renderMain(); };
   $("#f-priority").onchange = (e) => { f.priority = e.target.value; renderMain(); };
@@ -683,6 +687,57 @@ async function openTaskModal(dep, allTags) {
     closeModal();
     renderMain();
   };
+}
+
+// ---------- Tags manager (create / rename / recolor / delete) ----------
+async function openTagsModal() {
+  const tags = await API.get("/api/tags");
+  const isAdmin = state.me.role === "admin";
+  openModal(`
+    <h3>${t("tasks.tags")}</h3>
+    <div>
+      ${tags.length ? tags.map((tg) => `
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <input type="color" id="tg-c-${tg.id}" value="${esc(tg.color)}" style="width:42px;padding:2px" ${isAdmin ? "" : "disabled"} />
+          <input id="tg-n-${tg.id}" value="${esc(tg.name)}" style="flex:1" ${isAdmin ? "" : "disabled"} />
+          ${isAdmin ? `
+            <button class="btn small" data-tgsave="${tg.id}">${t("common.save")}</button>
+            <button class="ci-del" data-tgdel="${tg.id}" title="${t("common.delete")}">✕</button>` : ""}
+        </div>`).join("") : `<div class="muted" style="margin-bottom:10px">${t("tasks.no_tags")}</div>`}
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:14px 0" />
+    <label>${t("tasks.create_tag")}</label>
+    <div class="add-inline">
+      <input id="tg-new-name" placeholder="${t("tasks.new_tag")}" />
+      <input type="color" id="tg-new-color" value="#6b7280" style="width:42px;padding:2px" />
+      <button class="btn small" id="tg-add">+ ${t("common.create")}</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="tg-close">${t("common.close")}</button>
+    </div>`);
+  const reopen = () => { closeModal(); openTagsModal(); };
+  $("#tg-close").onclick = () => { closeModal(); renderMain(); };  // refresh tag filter/chips
+  $("#tg-add").onclick = async () => {
+    const name = $("#tg-new-name").value.trim();
+    if (!name) return;
+    await API.post("/api/tags", { name, color: $("#tg-new-color").value });
+    reopen();
+  };
+  $("#tg-new-name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#tg-add").click(); });
+  document.querySelectorAll("[data-tgsave]").forEach((b) =>
+    b.onclick = async () => {
+      const id = b.dataset.tgsave;
+      const name = $(`#tg-n-${id}`).value.trim();
+      if (!name) return;
+      await API.put(`/api/tags/${id}`, { name, color: $(`#tg-c-${id}`).value });
+      reopen();
+    });
+  document.querySelectorAll("[data-tgdel]").forEach((b) =>
+    b.onclick = async () => {
+      if (!confirm(t("common.confirm_delete"))) return;
+      await API.del(`/api/tags/${b.dataset.tgdel}`);
+      reopen();
+    });
 }
 
 // Toggle chip on/off with its own color when active.
