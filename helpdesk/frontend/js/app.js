@@ -639,6 +639,7 @@ async function openTaskModal(dep, allTags) {
     <h3>${t("tasks.new_task")}</h3>
     <div class="field"><label>${t("tasks.task_title")}</label><input id="t-title" /></div>
     <div class="field"><label>${t("tasks.task_desc")}</label><textarea id="t-desc"></textarea></div>
+    <div class="field"><label>${t("tasks.attachments")}</label><input type="file" id="t-files" multiple accept="image/*,video/*,*/*" /></div>
     <div class="row">
       <div class="field"><label>${t("tasks.priority")}</label>
         <select id="t-prio">${PRIORITIES.map((p) => `<option value="${p}" ${p === "normal" ? "selected" : ""}>${t("priority." + p)}</option>`).join("")}</select></div>
@@ -668,7 +669,7 @@ async function openTaskModal(dep, allTags) {
     if (!title) return;
     const due = $("#t-due").value;
     const tagIds = [...document.querySelectorAll("#t-tags .tag-toggle.on")].map((e) => parseInt(e.dataset.tag));
-    await API.post(`/api/departments/${dep.id}/tasks`, {
+    const created = await API.post(`/api/departments/${dep.id}/tasks`, {
       title,
       description: $("#t-desc").value.trim(),
       priority: $("#t-prio").value,
@@ -677,6 +678,8 @@ async function openTaskModal(dep, allTags) {
       due_date: due ? new Date(due).toISOString() : null,
       tag_ids: tagIds,
     });
+    const files = [...$("#t-files").files];
+    for (const f of files) await API.upload(`/api/tasks/${created.id}/attachments`, f);
     closeModal();
     renderMain();
   };
@@ -742,14 +745,17 @@ async function viewTaskDetail(main) {
           <div id="comments">${renderComments(task.comments)}</div>
           <div style="margin-top:12px">
             <textarea id="c-body" placeholder="${t("tasks.add_comment")}"></textarea>
-            <div style="margin-top:8px"><button class="btn small" id="c-send">${t("tasks.send")}</button></div>
+            <div class="add-inline" style="margin-top:8px">
+              <input type="file" id="c-files" multiple accept="image/*,video/*,*/*" />
+              <button class="btn small" id="c-send">${t("tasks.send")}</button>
+            </div>
           </div>
         </div>
 
         <div class="section">
           <h4>${t("tasks.attachments")}</h4>
-          <div id="attachments">${renderAttachments(task.attachments)}</div>
-          <div style="margin-top:10px"><input type="file" id="a-file" /></div>
+          <div id="attachments">${renderAttachments((task.attachments || []).filter((a) => !a.comment_id))}</div>
+          <div style="margin-top:10px"><input type="file" id="a-file" multiple accept="image/*,video/*,*/*" /></div>
         </div>
 
         <div class="section">
@@ -827,15 +833,22 @@ async function viewTaskDetail(main) {
 
   $("#c-send").onclick = async () => {
     const body = $("#c-body").value.trim();
-    if (!body) return;
-    await API.post(`/api/tasks/${task.id}/comments`, { body });
-    reload();
+    const files = [...$("#c-files").files];
+    if (!body && !files.length) return;
+    const btn = $("#c-send"); btn.disabled = true;
+    try {
+      const comment = await API.post(`/api/tasks/${task.id}/comments`, { body });
+      for (const f of files) await API.upload(`/api/comments/${comment.id}/attachments`, f);
+      reload();
+    } catch (err) { alert(err.message); btn.disabled = false; }
   };
   $("#a-file").onchange = async (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    try { await API.upload(`/api/tasks/${task.id}/attachments`, f); reload(); }
-    catch (err) { alert(err.message); }
+    const files = [...e.target.files];
+    if (!files.length) return;
+    try {
+      for (const f of files) await API.upload(`/api/tasks/${task.id}/attachments`, f);
+      reload();
+    } catch (err) { alert(err.message); }
   };
 
   // ----- Checklist -----
@@ -906,17 +919,42 @@ function renderComments(comments) {
         <span class="author">${userLabel(c.author)}</span>
         <span class="time">${fmtDate(c.created_at)}</span>
       </div>
-      <div class="body">${esc(c.body)}</div>
+      ${c.body ? `<div class="body">${esc(c.body)}</div>` : ""}
+      ${renderMedia(c.attachments)}
     </div>`).join("");
+}
+
+function attViewUrl(a) {
+  return `/api/attachments/${a.id}/view?token=${encodeURIComponent(API.token)}`;
+}
+function fmtSize(b) {
+  return b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : (b / 1024).toFixed(0) + " KB";
+}
+function isImage(a) { return (a.content_type || "").startsWith("image/"); }
+function isVideo(a) { return (a.content_type || "").startsWith("video/"); }
+
+// Render attachments as inline previews: images (click to zoom), playable
+// videos, and a download chip for other document types.
+function renderMedia(atts) {
+  if (!atts || !atts.length) return "";
+  return `<div class="att-grid">` + atts.map((a) => {
+    if (isImage(a)) {
+      return `<img class="att-thumb" src="${attViewUrl(a)}" alt="${esc(a.filename)}" title="${esc(a.filename)}" data-lightbox="1" />`;
+    }
+    if (isVideo(a)) {
+      return `<video class="att-thumb" src="${attViewUrl(a)}" controls preload="metadata"></video>`;
+    }
+    return `<span class="att-doc">
+        <span class="att-doc-name" title="${esc(a.filename)}">📄 ${esc(a.filename)}</span>
+        <span class="muted">${fmtSize(a.size)}</span>
+        <a class="btn secondary small" href="#" data-att="${a.id}">${t("tasks.download")}</a>
+      </span>`;
+  }).join("") + `</div>`;
 }
 
 function renderAttachments(atts) {
   if (!atts || !atts.length) return `<div class="muted">${t("tasks.no_attachments")}</div>`;
-  return atts.map((a) => `
-    <div class="attach-item">
-      <span>📎 ${esc(a.filename)} <span class="muted">(${(a.size / 1024).toFixed(1)} KB)</span></span>
-      <a class="btn secondary small" href="/api/attachments/${a.id}/download?token=" data-att="${a.id}">${t("tasks.download")}</a>
-    </div>`).join("");
+  return renderMedia(atts);
 }
 
 function renderHistory(events) {
@@ -940,6 +978,17 @@ function translatePair(detail, ns) {
   }
   return detail;
 }
+
+// Click an image preview to open it full-screen (lightbox).
+document.addEventListener("click", (e) => {
+  const img = e.target.closest("img[data-lightbox]");
+  if (!img) return;
+  const box = document.createElement("div");
+  box.className = "lightbox";
+  box.innerHTML = `<img src="${img.getAttribute("src")}" />`;
+  box.addEventListener("click", () => box.remove());
+  document.body.appendChild(box);
+});
 
 // Attachments need the auth header, so intercept clicks and fetch as blob.
 document.addEventListener("click", async (e) => {

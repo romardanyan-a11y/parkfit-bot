@@ -138,9 +138,10 @@ def build_export(db, include_files: bool = True) -> dict:
             "body": c.body, "created_at": _dt(c.created_at),
         } for c in db.query(models.Comment).all()],
         "attachments": [{
-            "id": a.id, "task_id": a.task_id, "filename": a.filename,
-            "stored_name": a.stored_name, "content_type": a.content_type,
-            "size": a.size, "uploaded_by_id": a.uploaded_by_id,
+            "id": a.id, "task_id": a.task_id, "comment_id": a.comment_id,
+            "filename": a.filename, "stored_name": a.stored_name,
+            "content_type": a.content_type, "size": a.size,
+            "uploaded_by_id": a.uploaded_by_id,
             "created_at": _dt(a.created_at), "content_b64": att_content(a),
         } for a in db.query(models.Attachment).all()],
         "task_events": [{
@@ -247,10 +248,10 @@ def restore_import(db, data: dict) -> dict:
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     for a in data.get("attachments", []):
         db.add(models.Attachment(
-            id=a["id"], task_id=a["task_id"], filename=a.get("filename"),
-            stored_name=a.get("stored_name"), content_type=a.get("content_type"),
-            size=a.get("size", 0), uploaded_by_id=a.get("uploaded_by_id"),
-            created_at=_pdt(a.get("created_at")),
+            id=a["id"], task_id=a["task_id"], comment_id=a.get("comment_id"),
+            filename=a.get("filename"), stored_name=a.get("stored_name"),
+            content_type=a.get("content_type"), size=a.get("size", 0),
+            uploaded_by_id=a.get("uploaded_by_id"), created_at=_pdt(a.get("created_at")),
         ))
         b64 = a.get("content_b64")
         if b64 and a.get("stored_name"):

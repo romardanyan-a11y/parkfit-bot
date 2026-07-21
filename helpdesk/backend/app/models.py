@@ -199,6 +199,12 @@ class Comment(Base):
 
     task = relationship("Task", back_populates="comments")
     author = relationship("User")
+    attachments = relationship(
+        "Attachment",
+        primaryjoin="Comment.id==Attachment.comment_id",
+        viewonly=True,
+        order_by="Attachment.id",
+    )
 
 
 class Attachment(Base):
@@ -206,6 +212,9 @@ class Attachment(Base):
 
     id = Column(Integer, primary_key=True)
     task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"))
+    # When set, the attachment belongs to a comment; otherwise it is a
+    # task-level (description) attachment.
+    comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True)
     filename = Column(String(500))
     stored_name = Column(String(500))
     content_type = Column(String(200))

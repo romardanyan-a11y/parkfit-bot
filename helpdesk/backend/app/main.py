@@ -78,6 +78,12 @@ def ensure_schema():
             if "name_zh" not in pcols:
                 conn.execute(text("ALTER TABLE positions ADD COLUMN name_zh VARCHAR(150)"))
 
+    if insp.has_table("attachments"):
+        acols = {c["name"] for c in insp.get_columns("attachments")}
+        if "comment_id" not in acols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE attachments ADD COLUMN comment_id INTEGER"))
+
 
 @app.get("/api/health")
 def health():

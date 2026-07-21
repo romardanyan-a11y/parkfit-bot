@@ -17,7 +17,7 @@ class Settings:
 
     # File uploads
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "/data/uploads")
-    MAX_UPLOAD_MB: int = int(os.getenv("MAX_UPLOAD_MB", "20"))
+    MAX_UPLOAD_MB: int = int(os.getenv("MAX_UPLOAD_MB", "100"))  # generous, for video
 
     # Automatic backups
     BACKUP_DIR: str = os.getenv("BACKUP_DIR", "/data/backups")

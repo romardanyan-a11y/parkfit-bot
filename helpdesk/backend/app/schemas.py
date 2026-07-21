@@ -200,6 +200,7 @@ class CommentOut(BaseModel):
     body: str
     created_at: datetime
     author: Optional[UserMini]
+    attachments: List["AttachmentOut"] = []
 
     class Config:
         from_attributes = True
@@ -215,6 +216,7 @@ class AttachmentOut(BaseModel):
     content_type: str
     size: int
     created_at: datetime
+    comment_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -279,6 +281,8 @@ class SettingsOut(BaseModel):
     app_name: str
 
 
-# Resolve forward references to PositionOut (defined after these models).
+# Resolve forward references (types defined later in the module).
 UserOut.model_rebuild()
 DirectoryUserOut.model_rebuild()
+CommentOut.model_rebuild()
+TaskDetailOut.model_rebuild()
