@@ -111,6 +111,7 @@
     "attachments": "Attachments",
     "upload": "Upload file",
     "download": "Download",
+    "preview_unavailable": "Preview unavailable — download the file",
     "history": "History",
     "no_comments": "No comments yet",
     "no_attachments": "No attachments",

@@ -111,6 +111,7 @@
     "attachments": "Вложения",
     "upload": "Загрузить файл",
     "download": "Скачать",
+    "preview_unavailable": "Предпросмотр недоступен — скачайте файл",
     "history": "История",
     "no_comments": "Комментариев пока нет",
     "no_attachments": "Вложений нет",

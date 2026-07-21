@@ -1,3 +1,4 @@
+import mimetypes
 import os
 import uuid
 
@@ -25,6 +26,32 @@ def _get_task(db: Session, task_id: int, user: User) -> Task:
     return task
 
 
+# iPhone photos (HEIC/HEIF) cannot be rendered by browsers — convert to JPEG
+# on upload so they preview inline everywhere.
+HEIC_EXTS = {".heic", ".heif"}
+HEIC_TYPES = {"image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"}
+
+
+def _maybe_convert_heic(dest: str, stored_name: str, filename: str, content_type: str):
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext not in HEIC_EXTS and (content_type or "").lower() not in HEIC_TYPES:
+        return None
+    try:
+        from PIL import Image
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+        img = Image.open(dest)
+        new_stored = os.path.splitext(stored_name)[0] + ".jpg"
+        new_dest = os.path.join(settings.UPLOAD_DIR, new_stored)
+        img.convert("RGB").save(new_dest, "JPEG", quality=90)
+        os.remove(dest)
+        new_filename = (os.path.splitext(filename or "")[0] or "photo") + ".jpg"
+        return new_stored, new_filename, "image/jpeg", os.path.getsize(new_dest)
+    except Exception:
+        # Keep the original file — it will still be downloadable.
+        return None
+
+
 def _save_upload(file: UploadFile, task: Task, user: User, db: Session, comment_id=None) -> Attachment:
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     ext = os.path.splitext(file.filename or "")[1]
@@ -45,12 +72,23 @@ def _save_upload(file: UploadFile, task: Task, user: User, db: Session, comment_
                 raise HTTPException(status_code=413, detail="File too large")
             out.write(chunk)
 
+    filename = file.filename or stored_name
+    content_type = file.content_type or ""
+    # Some clients send a generic type — infer a real one from the extension so
+    # images/videos are recognized and previewed inline.
+    if content_type in ("", "application/octet-stream", "binary/octet-stream"):
+        guessed, _ = mimetypes.guess_type(filename)
+        content_type = guessed or "application/octet-stream"
+    converted = _maybe_convert_heic(dest, stored_name, filename, content_type)
+    if converted:
+        stored_name, filename, content_type, size = converted
+
     att = Attachment(
         task_id=task.id,
         comment_id=comment_id,
-        filename=file.filename or stored_name,
+        filename=filename,
         stored_name=stored_name,
-        content_type=file.content_type or "application/octet-stream",
+        content_type=content_type,
         size=size,
         uploaded_by_id=user.id,
     )

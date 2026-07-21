@@ -933,22 +933,33 @@ function fmtSize(b) {
 function isImage(a) { return (a.content_type || "").startsWith("image/"); }
 function isVideo(a) { return (a.content_type || "").startsWith("video/"); }
 
-// Render attachments as inline previews: images (click to zoom), playable
-// videos, and a download chip for other document types.
+// Render attachments as messenger-style cards: a preview (image / playable
+// video / document icon) plus a footer with the file name, size and a
+// download button — every file stays downloadable.
 function renderMedia(atts) {
   if (!atts || !atts.length) return "";
   return `<div class="att-grid">` + atts.map((a) => {
+    const footer = `
+      <div class="att-foot">
+        <span class="att-name" title="${esc(a.filename)}">${esc(a.filename)}</span>
+        <span class="att-size">${fmtSize(a.size)}</span>
+        <a class="att-dl" href="#" data-att="${a.id}" title="${t("tasks.download")}">⬇</a>
+      </div>`;
     if (isImage(a)) {
-      return `<img class="att-thumb" src="${attViewUrl(a)}" alt="${esc(a.filename)}" title="${esc(a.filename)}" data-lightbox="1" />`;
+      return `<div class="att-card">
+          <img class="att-thumb" src="${attViewUrl(a)}" alt="${esc(a.filename)}" data-lightbox="1"
+               onerror="this.closest('.att-card').classList.add('broken')" />
+          <div class="att-fallback">🖼 ${t("tasks.preview_unavailable")}</div>
+          ${footer}</div>`;
     }
     if (isVideo(a)) {
-      return `<video class="att-thumb" src="${attViewUrl(a)}" controls preload="metadata"></video>`;
+      return `<div class="att-card">
+          <video class="att-thumb" src="${attViewUrl(a)}" controls preload="metadata"
+                 onerror="this.closest('.att-card').classList.add('broken')"></video>
+          <div class="att-fallback">🎬 ${t("tasks.preview_unavailable")}</div>
+          ${footer}</div>`;
     }
-    return `<span class="att-doc">
-        <span class="att-doc-name" title="${esc(a.filename)}">📄 ${esc(a.filename)}</span>
-        <span class="muted">${fmtSize(a.size)}</span>
-        <a class="btn secondary small" href="#" data-att="${a.id}">${t("tasks.download")}</a>
-      </span>`;
+    return `<div class="att-card doc"><div class="att-docicon">📄</div>${footer}</div>`;
   }).join("") + `</div>`;
 }
 

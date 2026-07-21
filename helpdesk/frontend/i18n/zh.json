@@ -111,6 +111,7 @@
     "attachments": "附件",
     "upload": "上传文件",
     "download": "下载",
+    "preview_unavailable": "无法预览 — 请下载文件",
     "history": "历史记录",
     "no_comments": "暂无评论",
     "no_attachments": "暂无附件",
