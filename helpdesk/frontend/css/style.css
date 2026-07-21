@@ -165,8 +165,11 @@ tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--bg); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); font-size: 13px; }
 
-/* Dual-timezone timestamps (Moscow / Beijing) */
-.dt { white-space: nowrap; }
+/* Dual-timezone timestamps (Moscow / Beijing).
+   The whole stamp may wrap onto several lines, but each "time + zone" chunk
+   stays together so it never breaks mid-value or overflows its tile. */
+.dt { white-space: normal; word-break: normal; overflow-wrap: anywhere; }
+.dt-part { white-space: nowrap; display: inline-block; }
 .dt b { font-weight: 600; }
 .tzc {
   display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
@@ -205,8 +208,9 @@ tbody tr:hover { background: var(--bg); }
 .detail-main { display: flex; flex-direction: column; gap: 18px; }
 .detail-side .side-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
 .detail-side .side-block h4 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.03em; }
-.kv { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
-.kv .k { color: var(--muted); }
+.kv { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 5px 0; font-size: 13px; }
+.kv .k { color: var(--muted); flex-shrink: 0; }
+.kv > span:last-child { text-align: right; min-width: 0; }
 .section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
 .section h4 { margin: 0 0 12px; font-size: 15px; }
 .comment { padding: 10px 0; border-bottom: 1px solid var(--border); }

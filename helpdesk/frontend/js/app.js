@@ -60,10 +60,10 @@ function fmtDate(s) {
   const CN = `<span class="tzc cn">${t("tz.cn")}</span>`;
   if (m.date === c.date) {
     // Same calendar day in both zones — show the date once.
-    return `<span class="dt">${m.date} · <b>${m.time}</b> ${MSK} · <b>${c.time}</b> ${CN}</span>`;
+    return `<span class="dt"><span class="dt-part">${m.date} · <b>${m.time}</b> ${MSK}</span> <span class="dt-part">· <b>${c.time}</b> ${CN}</span></span>`;
   }
   // Crosses midnight between zones — show each zone's own date to avoid confusion.
-  return `<span class="dt">${m.date}, <b>${m.time}</b> ${MSK} · ${c.date}, <b>${c.time}</b> ${CN}</span>`;
+  return `<span class="dt"><span class="dt-part">${m.date}, <b>${m.time}</b> ${MSK}</span> <span class="dt-part">· ${c.date}, <b>${c.time}</b> ${CN}</span></span>`;
 }
 
 // Date-only (e.g. a due date) — a deadline is a day, shown in Moscow time.
@@ -606,13 +606,14 @@ function taskTable(tasks) {
   return `
     <div class="panel"><table>
       <thead><tr>
-        <th>${t("tasks.key")}</th><th>${t("tasks.task_title")}</th><th>${t("tasks.status")}</th>
+        <th>${t("tasks.key")}</th><th>${t("tasks.task_title")}</th><th>${t("tasks.created")}</th><th>${t("tasks.status")}</th>
         <th>${t("tasks.priority")}</th><th>${t("tasks.assignee")}</th><th>${t("tasks.due_date")}</th>
       </tr></thead>
       <tbody>${tasks.map((task) => `
         <tr data-task="${task.id}">
           <td class="mono" data-label="${t("tasks.key")}">${esc(task.key)}${actDot(state.activity.tasks[task.id], "taskdot-" + task.id)}</td>
           <td data-label="${t("tasks.task_title")}">${esc(task.title)}${tagChips(task.tags)}</td>
+          <td data-label="${t("tasks.created")}">${fmtDate(task.created_at)}</td>
           <td data-label="${t("tasks.status")}"><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
           <td data-label="${t("tasks.priority")}"><span class="pr-${task.priority}">${t("priority." + task.priority)}</span></td>
           <td data-label="${t("tasks.assignee")}">${task.assignee ? userLabel(task.assignee) : `<span class="muted">${t("tasks.unassigned")}</span>`}</td>
