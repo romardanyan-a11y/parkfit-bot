@@ -28,18 +28,49 @@ function esc(s) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-function fmtDate(s) {
-  if (!s) return "—";
-  const d = new Date(s);
-  if (isNaN(d)) return "—";
-  return d.toLocaleString(I18N.lang === "zh" ? "zh-CN" : I18N.lang === "en" ? "en-US" : "ru-RU",
-    { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+function localeCode() {
+  return I18N.lang === "zh" ? "zh-CN" : I18N.lang === "en" ? "en-US" : "ru-RU";
 }
+
+// The server stores naive UTC timestamps (no timezone suffix). A browser would
+// otherwise read them as local time — the cause of the -3h shift. Force UTC.
+function parseServerDate(s) {
+  if (!s) return null;
+  let iso = String(s);
+  if (!/([zZ]|[+-]\d\d:?\d\d)$/.test(iso)) iso += "Z";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function tzParts(d, tz) {
+  const loc = localeCode();
+  return {
+    date: d.toLocaleDateString(loc, { timeZone: tz, day: "2-digit", month: "short", year: "numeric" }),
+    time: d.toLocaleTimeString(loc, { timeZone: tz, hour: "2-digit", minute: "2-digit" }),
+  };
+}
+
+// Show every timestamp in BOTH Moscow and Beijing time, each clearly labelled.
+function fmtDate(s) {
+  const d = parseServerDate(s);
+  if (!d) return "—";
+  const m = tzParts(d, "Europe/Moscow");
+  const c = tzParts(d, "Asia/Shanghai");
+  const MSK = `<span class="tzc">${t("tz.msk")}</span>`;
+  const CN = `<span class="tzc cn">${t("tz.cn")}</span>`;
+  if (m.date === c.date) {
+    // Same calendar day in both zones — show the date once.
+    return `<span class="dt">${m.date} · <b>${m.time}</b> ${MSK} · <b>${c.time}</b> ${CN}</span>`;
+  }
+  // Crosses midnight between zones — show each zone's own date to avoid confusion.
+  return `<span class="dt">${m.date}, <b>${m.time}</b> ${MSK} · ${c.date}, <b>${c.time}</b> ${CN}</span>`;
+}
+
+// Date-only (e.g. a due date) — a deadline is a day, shown in Moscow time.
 function fmtDay(s) {
-  if (!s) return "—";
-  const d = new Date(s);
-  if (isNaN(d)) return "—";
-  return d.toLocaleDateString(I18N.lang === "zh" ? "zh-CN" : I18N.lang === "en" ? "en-US" : "ru-RU");
+  const d = parseServerDate(s);
+  if (!d) return "—";
+  return d.toLocaleDateString(localeCode(), { timeZone: "Europe/Moscow", day: "2-digit", month: "short", year: "numeric" });
 }
 
 // Resolve the name to show for a user: a personal alias (if set + enabled)

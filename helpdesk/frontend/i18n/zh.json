@@ -1,5 +1,9 @@
 {
   "lang_name": "中文",
+  "tz": {
+    "msk": "莫斯科",
+    "cn": "北京"
+  },
   "common": {
     "cancel": "取消",
     "save": "保存",

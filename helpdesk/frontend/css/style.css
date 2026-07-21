@@ -165,6 +165,16 @@ tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--bg); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); font-size: 13px; }
 
+/* Dual-timezone timestamps (Moscow / Beijing) */
+.dt { white-space: nowrap; }
+.dt b { font-weight: 600; }
+.tzc {
+  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+  padding: 0 5px; border-radius: 6px; background: var(--bg); color: var(--muted);
+  border: 1px solid var(--border); vertical-align: middle;
+}
+.tzc.cn { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
+
 /* ---------- Badges ---------- */
 .badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 .st-open { background: #e0e7ff; color: #3730a3; }

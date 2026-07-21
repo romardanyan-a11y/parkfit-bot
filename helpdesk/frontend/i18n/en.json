@@ -1,5 +1,9 @@
 {
   "lang_name": "English",
+  "tz": {
+    "msk": "MSK",
+    "cn": "Beijing"
+  },
   "common": {
     "cancel": "Cancel",
     "save": "Save",
