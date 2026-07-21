@@ -89,40 +89,54 @@ async function fetchActivity() {
   try {
     state.activity = await API.get("/api/activity");
   } catch (e) { /* keep previous */ }
-  setNavBadge("catalog", state.activity.total);
+  setNavDot("catalog", state.activity.total > 0);
 }
 
-function setNavBadge(view, count) {
+// A simple red dot in a sidebar nav item (no number).
+function setNavDot(view, on) {
   const item = document.querySelector(`.nav-item[data-view="${view}"]`);
   if (!item) return;
-  let badge = item.querySelector(".nav-badge");
-  if (count > 0) {
-    if (!badge) {
-      badge = document.createElement("span");
-      badge.className = "nav-badge";
-      item.appendChild(badge);
+  let dot = item.querySelector(".act-dot");
+  if (on) {
+    if (!dot) {
+      dot = document.createElement("span");
+      dot.className = "act-dot";
+      item.appendChild(dot);
     }
-    badge.textContent = count;
-  } else if (badge) {
-    badge.remove();
+  } else if (dot) {
+    dot.remove();
   }
 }
 
-// Update inline badges (department cards, task rows) from state without a re-render.
+// Toggle the inline dots (department cards, task rows) from state, no re-render.
 function refreshActivityUI() {
-  setNavBadge("catalog", state.activity.total);
-  document.querySelectorAll("[id^='depbadge-']").forEach((el) => {
-    const c = state.activity.departments[el.id.replace("depbadge-", "")] || 0;
-    el.textContent = c || ""; el.hidden = !c;
+  setNavDot("catalog", state.activity.total > 0);
+  document.querySelectorAll("[id^='depdot-']").forEach((el) => {
+    el.hidden = !(state.activity.departments[el.id.replace("depdot-", "")] || 0);
   });
-  document.querySelectorAll("[id^='taskbadge-']").forEach((el) => {
-    const c = state.activity.tasks[el.id.replace("taskbadge-", "")] || 0;
-    el.textContent = c || ""; el.hidden = !c;
+  document.querySelectorAll("[id^='taskdot-']").forEach((el) => {
+    el.hidden = !(state.activity.tasks[el.id.replace("taskdot-", "")] || 0);
   });
 }
 
-function actBadge(count, id) {
-  return `<span class="act-badge" id="${id}"${count ? "" : " hidden"}>${count || ""}</span>`;
+function actDot(count, id) {
+  return `<span class="act-dot" id="${id}"${count ? "" : " hidden"}></span>`;
+}
+
+// Mark a task read: clear its dot immediately (optimistic) AND persist, so the
+// dot never lingers due to a slow request / navigation race.
+async function markTaskSeen(task) {
+  const c = state.activity.tasks[task.id] || 0;
+  if (c) {
+    delete state.activity.tasks[task.id];
+    const dep = task.department_id;
+    const left = (state.activity.departments[dep] || 0) - c;
+    if (left > 0) state.activity.departments[dep] = left;
+    else delete state.activity.departments[dep];
+    state.activity.total = Math.max(0, state.activity.total - c);
+    refreshActivityUI();
+  }
+  try { await API.post(`/api/tasks/${task.id}/seen`); } catch (e) { /* ignore */ }
 }
 
 function startActivityPolling() {
@@ -338,7 +352,7 @@ async function refreshNotifCount() {
 function renderShell() {
   const isAdmin = state.me.role === "admin";
   const nav = [
-    { key: "catalog", label: t("nav.catalog"), badge: state.activity.total },
+    { key: "catalog", label: t("nav.catalog"), dot: state.activity.total > 0 },
     { key: "archive", label: t("nav.archive") },
     { key: "directory", label: t("nav.users") },  // public staff directory, everyone
   ];
@@ -359,6 +373,7 @@ function renderShell() {
             <a class="nav-item ${state.view === n.key ? "active" : ""}" data-view="${n.key}">
               <span class="label">${esc(n.label)}</span>
               ${n.badge ? `<span class="nav-badge">${n.badge}</span>` : ""}
+              ${n.dot ? `<span class="act-dot"></span>` : ""}
             </a>`).join("")}
         </nav>
         <div class="sidebar-footer">
@@ -426,7 +441,6 @@ async function renderMain() {
 async function viewCatalog(main) {
   const isAdmin = state.me.role === "admin";
   const deps = await API.get("/api/departments");
-  await fetchActivity();
   main.innerHTML = `
     <div class="topbar">
       <h2>${t("catalog.title")}</h2>
@@ -455,7 +469,7 @@ function depCard(d) {
   const isAdmin = state.me.role === "admin";
   return `
     <div class="card" id="dep-${d.id}">
-      <h3>${esc(d.name)}${actBadge(state.activity.departments[d.id], "depbadge-" + d.id)}</h3>
+      <h3>${esc(d.name)}${actDot(state.activity.departments[d.id], "depdot-" + d.id)}</h3>
       <div class="desc">${esc(d.description || "")}</div>
       <div class="stats">
         <span>${t("catalog.open_tasks")}: <b>${d.open_tasks}</b></span>
@@ -500,7 +514,6 @@ async function viewDepartment(main) {
   const dep = state.currentDept;
   const f = currentFilters();
   const allTags = await API.get("/api/tags");
-  await fetchActivity();
 
   let url = `/api/departments/${dep.id}/tasks?archived=false`;
   if (f.status) url += `&status=${f.status}`;
@@ -567,7 +580,7 @@ function taskTable(tasks) {
       </tr></thead>
       <tbody>${tasks.map((task) => `
         <tr data-task="${task.id}">
-          <td class="mono" data-label="${t("tasks.key")}">${esc(task.key)}${actBadge(state.activity.tasks[task.id], "taskbadge-" + task.id)}</td>
+          <td class="mono" data-label="${t("tasks.key")}">${esc(task.key)}${actDot(state.activity.tasks[task.id], "taskdot-" + task.id)}</td>
           <td data-label="${t("tasks.task_title")}">${esc(task.title)}${tagChips(task.tags)}</td>
           <td data-label="${t("tasks.status")}"><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
           <td data-label="${t("tasks.priority")}"><span class="pr-${task.priority}">${t("priority." + task.priority)}</span></td>
@@ -655,8 +668,8 @@ async function viewTaskDetail(main) {
   const allTags = await API.get("/api/tags");
   const taskTagIds = new Set((task.tags || []).map((tg) => tg.id));
 
-  // Opening a task marks its activity as read for this user.
-  API.post(`/api/tasks/${task.id}/seen`).then(() => fetchActivity()).then(refreshActivityUI).catch(() => {});
+  // Opening a task marks its activity as read (optimistic + persisted).
+  markTaskSeen(task);
   const backLabel = state.view === "archive" ? t("nav.archive") : (state.currentDept ? esc(state.currentDept.name) : t("nav.catalog"));
 
   main.innerHTML = `

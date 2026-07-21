@@ -122,13 +122,12 @@ textarea { resize: vertical; min-height: 80px; }
 .nav-item:hover { background: rgba(255, 255, 255, 0.08); }
 .nav-item.active { background: rgba(255, 255, 255, 0.16); }
 .nav-badge { background: #dc2626; color: #fff; border-radius: 20px; padding: 1px 7px; font-size: 11px; }
-.act-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-  background: #dc2626; color: #fff; font-size: 11px; font-weight: 700;
-  margin-left: 8px; vertical-align: middle; line-height: 1;
+.act-dot {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  background: #dc2626; margin-left: 8px; vertical-align: middle; flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.18);
 }
-.act-badge[hidden] { display: none; }
+.act-dot[hidden] { display: none; }
 .sidebar-footer { margin-top: auto; }
 .sidebar-lang { display: flex; gap: 4px; padding: 8px 12px; }
 
