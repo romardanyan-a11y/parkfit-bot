@@ -21,7 +21,10 @@ def get_activity(user: User = Depends(get_current_user), db: Session = Depends(g
     """
     allowed = visible_department_ids(user)  # None == admin (all departments)
 
-    task_rows = db.query(Task.id, Task.department_id).all()
+    # Only active (non-archived) tasks count — a closed task moves to the
+    # archive and can no longer be opened from the normal list, so its events
+    # must not keep the dot lit forever.
+    task_rows = db.query(Task.id, Task.department_id).filter(Task.archived == False).all()  # noqa: E712
     if allowed is not None:
         task_rows = [r for r in task_rows if r.department_id in allowed]
     task_dep = {r.id: r.department_id for r in task_rows}
