@@ -12,6 +12,7 @@ import logging
 import os
 import threading
 import time
+import zipfile
 from datetime import datetime
 
 from .config import settings
@@ -297,20 +298,46 @@ def restore_import(db, data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Backup files on disk
+# Backup files on disk (ZIP archives: data.json + uploads/<files>)
 # ---------------------------------------------------------------------------
 def _timestamp() -> str:
     return datetime.utcnow().strftime("%Y%m%d-%H%M%S")
 
 
-def write_backup_file(db, keep: int | None = None) -> str:
+def _backup_glob() -> list:
+    # Current .zip backups plus legacy .json ones (still restorable).
+    return (glob.glob(os.path.join(settings.BACKUP_DIR, "helpdesk-backup-*.zip"))
+            + glob.glob(os.path.join(settings.BACKUP_DIR, "helpdesk-backup-*.json")))
+
+
+def write_archive(path: str, data: dict):
+    """Write a backup archive: data.json + every uploaded file under uploads/.
+
+    Media files (jpg/mp4) are already compressed, so they are STORED as-is;
+    the JSON is DEFLATE-compressed.
+    """
     import json
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("data.json", json.dumps(data, ensure_ascii=False),
+                    compress_type=zipfile.ZIP_DEFLATED)
+        seen = set()
+        for a in data.get("attachments", []):
+            stored = a.get("stored_name")
+            if not stored or stored in seen:
+                continue
+            seen.add(stored)
+            src = os.path.join(settings.UPLOAD_DIR, stored)
+            if os.path.exists(src):
+                zf.write(src, f"uploads/{stored}", compress_type=zipfile.ZIP_STORED)
+
+
+def write_backup_file(db, keep: int | None = None) -> str:
     os.makedirs(settings.BACKUP_DIR, exist_ok=True)
-    data = build_export(db, include_files=True)
-    name = f"helpdesk-backup-{_timestamp()}.json"
+    # Files travel inside the archive — no base64 in the JSON.
+    data = build_export(db, include_files=False)
+    name = f"helpdesk-backup-{_timestamp()}.zip"
     path = os.path.join(settings.BACKUP_DIR, name)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
+    write_archive(path, data)
     _set(db, K_LAST, datetime.utcnow().isoformat())
     db.commit()
     _rotate(keep if keep is not None else get_config(db)["keep"])
@@ -318,8 +345,37 @@ def write_backup_file(db, keep: int | None = None) -> str:
     return path
 
 
+def restore_from_bytes(db, raw: bytes) -> dict:
+    """Restore from an uploaded backup: ZIP archive (current format) or a
+    legacy JSON export with base64-embedded files."""
+    import io
+    import json
+    if raw[:4] == b"PK\x03\x04":
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            try:
+                data = json.loads(zf.read("data.json").decode("utf-8"))
+            except KeyError:
+                raise ValueError("Archive has no data.json")
+            summary = restore_import(db, data)
+            os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+            restored_files = 0
+            for name in zf.namelist():
+                if not name.startswith("uploads/") or name.endswith("/"):
+                    continue
+                target = os.path.basename(name)  # flat names only — no traversal
+                if not target:
+                    continue
+                with open(os.path.join(settings.UPLOAD_DIR, target), "wb") as f:
+                    f.write(zf.read(name))
+                restored_files += 1
+            summary["files"] = restored_files
+            return summary
+    data = json.loads(raw.decode("utf-8"))
+    return restore_import(db, data)
+
+
 def _rotate(keep: int):
-    files = sorted(glob.glob(os.path.join(settings.BACKUP_DIR, "helpdesk-backup-*.json")))
+    files = sorted(_backup_glob(), key=os.path.basename)
     for old in files[:-keep] if keep > 0 else []:
         try:
             os.remove(old)
@@ -328,7 +384,7 @@ def _rotate(keep: int):
 
 
 def list_backups() -> list:
-    files = sorted(glob.glob(os.path.join(settings.BACKUP_DIR, "helpdesk-backup-*.json")), reverse=True)
+    files = sorted(_backup_glob(), key=os.path.basename, reverse=True)
     out = []
     for p in files:
         try:

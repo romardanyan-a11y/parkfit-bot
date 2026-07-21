@@ -1520,7 +1520,7 @@ async function renderBackupSection(main) {
         <button class="btn secondary" id="bk-run">${t("admin.backup_now")}</button>
         <label class="btn secondary" style="cursor:pointer;margin:0">
           ⬆ ${t("admin.backup_import")}
-          <input type="file" id="bk-import" accept="application/json,.json" style="display:none" />
+          <input type="file" id="bk-import" accept=".zip,.json,application/zip,application/json" style="display:none" />
         </label>
       </div>
 
@@ -1543,7 +1543,7 @@ async function renderBackupSection(main) {
     </div>`;
   main.insertAdjacentHTML("beforeend", html);
 
-  $("#bk-export").onclick = () => downloadWithAuth("/api/admin/backup/export", "helpdesk-export.json");
+  $("#bk-export").onclick = () => downloadWithAuth("/api/admin/backup/export", "helpdesk-export.zip");
   $("#bk-run").onclick = async () => { await API.post("/api/admin/backup/run"); state.view = "settings"; renderMain(); };
   $("#bk-save").onclick = async () => {
     await API.put("/api/admin/backup/config", {

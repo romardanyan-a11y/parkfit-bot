@@ -1,8 +1,10 @@
-import json
 import os
+import tempfile
+import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -46,32 +48,45 @@ def list_backup_files(admin: User = Depends(get_current_admin)):
 @router.get("/download/{name}")
 def download_backup(name: str, admin: User = Depends(get_current_admin)):
     # Prevent path traversal — only allow our own backup filenames.
-    if "/" in name or "\\" in name or not name.startswith("helpdesk-backup-"):
+    if ("/" in name or "\\" in name or not name.startswith("helpdesk-backup-")
+            or not name.endswith((".zip", ".json"))):
         raise HTTPException(status_code=400, detail="Bad name")
     path = os.path.join(settings.BACKUP_DIR, name)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Not found")
-    return FileResponse(path, filename=name, media_type="application/json")
+    media = "application/zip" if name.endswith(".zip") else "application/json"
+    return FileResponse(path, filename=name, media_type=media)
 
 
-# Live export (download current state without persisting a file on the server).
+# Live export: build a fresh archive (data + all uploaded files) and stream it.
 @router.get("/export")
 def export_now(admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
-    data = backup.build_export(db, include_files=True)
+    data = backup.build_export(db, include_files=False)
     ts = data["exported_at"].replace(":", "").replace("-", "").split(".")[0]
-    headers = {"Content-Disposition": f'attachment; filename="helpdesk-export-{ts}.json"'}
-    return JSONResponse(content=data, headers=headers)
+    os.makedirs(settings.BACKUP_DIR, exist_ok=True)
+    # Temp name does not match helpdesk-backup-* so it never shows in the list.
+    fd, tmp = tempfile.mkstemp(suffix=".zip", prefix="export-", dir=settings.BACKUP_DIR)
+    os.close(fd)
+    try:
+        backup.write_archive(tmp, data)
+    except Exception:
+        os.remove(tmp)
+        raise
+    return FileResponse(
+        tmp,
+        filename=f"helpdesk-export-{ts}.zip",
+        media_type="application/zip",
+        background=BackgroundTask(os.remove, tmp),
+    )
 
 
 @router.post("/import")
 async def import_backup(file: UploadFile = File(...), admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
     raw = await file.read()
     try:
-        data = json.loads(raw.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        raise HTTPException(status_code=400, detail="Invalid JSON file")
-    try:
-        summary = backup.restore_import(db, data)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        summary = backup.restore_from_bytes(db, raw)
+    except (ValueError, KeyError, zipfile.BadZipFile) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid backup file: {exc}")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid backup file")
     return {"ok": True, "restored": summary}
