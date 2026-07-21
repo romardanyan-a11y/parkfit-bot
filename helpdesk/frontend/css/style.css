@@ -253,6 +253,16 @@ tbody tr:hover { background: var(--bg); }
   border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--surface);
 }
 .att-dl:hover { background: var(--bg); }
+.att-del { font-size: 13px; color: var(--muted); }
+.att-del:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+
+/* Comment edit/delete actions */
+.c-act {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: 14px; padding: 2px 4px; line-height: 1; border-radius: 6px;
+}
+.c-act:hover { color: var(--text); background: var(--bg); }
+.c-act-del:hover { color: #dc2626; }
 .lightbox {
   position: fixed; inset: 0; background: rgba(0, 0, 0, 0.9);
   display: flex; align-items: center; justify-content: center; z-index: 100;

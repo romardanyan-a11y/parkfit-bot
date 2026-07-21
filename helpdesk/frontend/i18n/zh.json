@@ -112,6 +112,7 @@
     "upload": "上传文件",
     "download": "下载",
     "preview_unavailable": "无法预览 — 请下载文件",
+    "edited": "已编辑",
     "history": "历史记录",
     "no_comments": "暂无评论",
     "no_attachments": "暂无附件",
@@ -158,7 +159,10 @@
     "type": "更改了类型",
     "due_date": "更改了截止日期",
     "comment": "添加了评论",
+    "comment_edited": "编辑了评论",
+    "comment_deleted": "删除了评论",
     "attachment": "上传了文件",
+    "attachment_deleted": "删除了文件",
     "tags": "更改了标签"
   },
   "admin": {

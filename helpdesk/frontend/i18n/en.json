@@ -112,6 +112,7 @@
     "upload": "Upload file",
     "download": "Download",
     "preview_unavailable": "Preview unavailable — download the file",
+    "edited": "edited",
     "history": "History",
     "no_comments": "No comments yet",
     "no_attachments": "No attachments",
@@ -158,7 +159,10 @@
     "type": "changed the type",
     "due_date": "changed the due date",
     "comment": "added a comment",
+    "comment_edited": "edited a comment",
+    "comment_deleted": "deleted a comment",
     "attachment": "attached a file",
+    "attachment_deleted": "deleted a file",
     "tags": "changed tags"
   },
   "admin": {

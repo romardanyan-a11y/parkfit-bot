@@ -136,6 +136,7 @@ def build_export(db, include_files: bool = True) -> dict:
         "comments": [{
             "id": c.id, "task_id": c.task_id, "author_id": c.author_id,
             "body": c.body, "created_at": _dt(c.created_at),
+            "edited_at": _dt(c.edited_at),
         } for c in db.query(models.Comment).all()],
         "attachments": [{
             "id": a.id, "task_id": a.task_id, "comment_id": a.comment_id,
@@ -243,7 +244,8 @@ def restore_import(db, data: dict) -> dict:
     # Comments
     for c in data.get("comments", []):
         db.add(models.Comment(id=c["id"], task_id=c["task_id"], author_id=c.get("author_id"),
-                             body=c["body"], created_at=_pdt(c.get("created_at"))))
+                             body=c["body"], created_at=_pdt(c.get("created_at")),
+                             edited_at=_pdt(c.get("edited_at"))))
     # Attachments (+ restore files to disk)
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     for a in data.get("attachments", []):

@@ -196,6 +196,7 @@ class Comment(Base):
     author_id = Column(Integer, ForeignKey("users.id"))
     body = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    edited_at = Column(DateTime, nullable=True)  # set when the author edits
 
     task = relationship("Task", back_populates="comments")
     author = relationship("User")

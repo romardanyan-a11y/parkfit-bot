@@ -851,6 +851,44 @@ async function viewTaskDetail(main) {
     } catch (err) { alert(err.message); }
   };
 
+  // ----- Comment edit / delete, attachment delete -----
+  document.querySelectorAll("[data-cdel]").forEach((b) =>
+    b.onclick = async () => {
+      if (!confirm(t("common.confirm_delete"))) return;
+      await API.del(`/api/comments/${b.dataset.cdel}`);
+      reload();
+    });
+  document.querySelectorAll("[data-cedit]").forEach((b) =>
+    b.onclick = () => {
+      const id = parseInt(b.dataset.cedit);
+      const c = (state.currentTask.comments || []).find((x) => x.id === id);
+      const slot = document.querySelector(`#comment-${id} .c-slot`);
+      if (!c || !slot) return;
+      slot.innerHTML = `
+        <textarea id="ce-${id}"></textarea>
+        <div style="margin-top:6px;display:flex;gap:8px">
+          <button class="btn small" id="ces-${id}">${t("common.save")}</button>
+          <button class="btn secondary small" id="cec-${id}">${t("common.cancel")}</button>
+        </div>`;
+      const ta = $(`#ce-${id}`);
+      ta.value = c.body || "";
+      ta.focus();
+      $(`#ces-${id}`).onclick = async () => {
+        try {
+          await API.put(`/api/comments/${id}`, { body: ta.value });
+          reload();
+        } catch (err) { alert(err.message); }
+      };
+      $(`#cec-${id}`).onclick = () => renderMain();
+    });
+  document.querySelectorAll("[data-attdel]").forEach((b) =>
+    b.onclick = async (e) => {
+      e.preventDefault();
+      if (!confirm(t("common.confirm_delete"))) return;
+      await API.del(`/api/attachments/${b.dataset.attdel}`);
+      reload();
+    });
+
   // ----- Checklist -----
   updateChecklistProgress(task.checklist);
   $("#ci-add").onclick = async () => {
@@ -913,15 +951,23 @@ function updateChecklistProgress(items) {
 
 function renderComments(comments) {
   if (!comments || !comments.length) return `<div class="muted">${t("tasks.no_comments")}</div>`;
-  return comments.map((c) => `
-    <div class="comment">
+  return comments.map((c) => {
+    const canMod = state.me && (state.me.role === "admin" || (c.author && c.author.id === state.me.id));
+    return `
+    <div class="comment" id="comment-${c.id}">
       <div class="head">
         <span class="author">${userLabel(c.author)}</span>
-        <span class="time">${fmtDate(c.created_at)}</span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <span class="time">${fmtDate(c.created_at)}${c.edited_at ? ` <span class="muted">(${t("tasks.edited")})</span>` : ""}</span>
+          ${canMod ? `
+            <button class="c-act" data-cedit="${c.id}" title="${t("common.edit")}">✎</button>
+            <button class="c-act c-act-del" data-cdel="${c.id}" title="${t("common.delete")}">✕</button>` : ""}
+        </span>
       </div>
-      ${c.body ? `<div class="body">${esc(c.body)}</div>` : ""}
+      <div class="c-slot">${c.body ? `<div class="body">${esc(c.body)}</div>` : ""}</div>
       ${renderMedia(c.attachments)}
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 function attViewUrl(a) {
@@ -939,11 +985,13 @@ function isVideo(a) { return (a.content_type || "").startsWith("video/"); }
 function renderMedia(atts) {
   if (!atts || !atts.length) return "";
   return `<div class="att-grid">` + atts.map((a) => {
+    const canDel = state.me && (state.me.role === "admin" || a.uploaded_by_id === state.me.id);
     const footer = `
       <div class="att-foot">
         <span class="att-name" title="${esc(a.filename)}">${esc(a.filename)}</span>
         <span class="att-size">${fmtSize(a.size)}</span>
         <a class="att-dl" href="#" data-att="${a.id}" title="${t("tasks.download")}">⬇</a>
+        ${canDel ? `<a class="att-dl att-del" href="#" data-attdel="${a.id}" title="${t("common.delete")}">✕</a>` : ""}
       </div>`;
     if (isImage(a)) {
       return `<div class="att-card">

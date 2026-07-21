@@ -199,6 +199,7 @@ class CommentOut(BaseModel):
     id: int
     body: str
     created_at: datetime
+    edited_at: Optional[datetime] = None
     author: Optional[UserMini]
     attachments: List["AttachmentOut"] = []
 
@@ -217,6 +218,7 @@ class AttachmentOut(BaseModel):
     size: int
     created_at: datetime
     comment_id: Optional[int] = None
+    uploaded_by_id: Optional[int] = None
 
     class Config:
         from_attributes = True

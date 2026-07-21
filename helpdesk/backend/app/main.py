@@ -84,6 +84,12 @@ def ensure_schema():
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE attachments ADD COLUMN comment_id INTEGER"))
 
+    if insp.has_table("comments"):
+        ccols = {c["name"] for c in insp.get_columns("comments")}
+        if "edited_at" not in ccols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE comments ADD COLUMN edited_at DATETIME"))
+
 
 @app.get("/api/health")
 def health():

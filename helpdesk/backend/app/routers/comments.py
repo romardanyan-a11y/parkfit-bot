@@ -1,6 +1,7 @@
 import mimetypes
 import os
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import Task, Comment, Attachment, User, Notification, USER_APPROVED
+from ..models import Task, Comment, Attachment, User, Notification, USER_APPROVED, ROLE_ADMIN
 from ..schemas import CommentIn, CommentOut, AttachmentOut
 from ..mailer import send_email_many
 from ..security import decode_token
@@ -127,6 +128,74 @@ def add_comment(task_id: int, data: CommentIn, user: User = Depends(get_current_
             f"{user.full_name or user.email} commented:\n\n{body}",
         )
     return comment
+
+
+def _ensure_comment_owner(comment: Comment, user: User):
+    """Only the comment's author or an admin may edit/delete it."""
+    if user.role != ROLE_ADMIN and comment.author_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your comment")
+
+
+def _delete_attachment_file(att: Attachment):
+    if att.stored_name:
+        path = os.path.join(settings.UPLOAD_DIR, att.stored_name)
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+@router.put("/comments/{comment_id}", response_model=CommentOut)
+def edit_comment(comment_id: int, data: CommentIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    comment = db.query(Comment).get(comment_id)
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    task = _get_task(db, comment.task_id, user)
+    _ensure_comment_owner(comment, user)
+    body = (data.body or "").strip()
+    has_files = db.query(Attachment).filter(Attachment.comment_id == comment.id).count() > 0
+    if not body and not has_files:
+        raise HTTPException(status_code=400, detail="Empty comment")
+    comment.body = body
+    comment.edited_at = datetime.utcnow()
+    log_event(db, task, user, "comment_edited", "")
+    db.commit()
+    db.refresh(comment)
+    return comment
+
+
+@router.delete("/comments/{comment_id}")
+def delete_comment(comment_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    comment = db.query(Comment).get(comment_id)
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    task = _get_task(db, comment.task_id, user)
+    _ensure_comment_owner(comment, user)
+    # Remove the comment's files from disk and their rows explicitly (SQLite
+    # databases migrated via ALTER TABLE have no FK cascade on comment_id).
+    for att in db.query(Attachment).filter(Attachment.comment_id == comment.id).all():
+        _delete_attachment_file(att)
+        db.delete(att)
+    db.delete(comment)
+    log_event(db, task, user, "comment_deleted", "")
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/attachments/{att_id}")
+def delete_attachment(att_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    att = db.query(Attachment).get(att_id)
+    if not att:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    task = _get_task(db, att.task_id, user)
+    if user.role != ROLE_ADMIN and att.uploaded_by_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your file")
+    _delete_attachment_file(att)
+    log_event(db, task, user, "attachment_deleted", att.filename or "")
+    db.delete(att)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/tasks/{task_id}/attachments", response_model=AttachmentOut)
