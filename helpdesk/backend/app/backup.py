@@ -109,9 +109,16 @@ def build_export(db, include_files: bool = True) -> dict:
             "full_name": u.full_name, "description": u.description, "role": u.role,
             "status": u.status, "preferred_language": u.preferred_language,
             "must_change_password": bool(u.must_change_password),
+            "position_id": u.position_id,
             "created_at": _dt(u.created_at),
             "department_ids": [d.id for d in u.departments],
         } for u in users],
+        "positions": [{"id": p.id, "name": p.name, "created_at": _dt(p.created_at)}
+                      for p in db.query(models.Position).all()],
+        "user_aliases": [{
+            "id": a.id, "owner_id": a.owner_id, "target_id": a.target_id,
+            "alias": a.alias or "", "display": bool(a.display), "created_at": _dt(a.created_at),
+        } for a in db.query(models.UserAlias).all()],
         "departments": [{
             "id": d.id, "name": d.name, "description": d.description,
             "created_at": _dt(d.created_at), "created_by_id": d.created_by_id,
@@ -165,13 +172,20 @@ def restore_import(db, data: dict) -> dict:
     db.query(models.TaskEvent).delete()
     db.query(models.Attachment).delete()
     db.query(models.Comment).delete()
+    db.query(models.UserAlias).delete()
     db.execute(models.task_tags.delete())
     db.execute(models.user_department_access.delete())
     db.query(models.Task).delete()
     db.query(models.Tag).delete()
     db.query(models.Department).delete()
     db.query(models.User).delete()
+    db.query(models.Position).delete()
     db.query(models.AppSetting).delete()
+    db.flush()
+
+    # Positions first — users reference them via position_id.
+    for p in data.get("positions", []):
+        db.add(models.Position(id=p["id"], name=p["name"], created_at=_pdt(p.get("created_at"))))
     db.flush()
 
     # Departments
@@ -188,6 +202,7 @@ def restore_import(db, data: dict) -> dict:
             role=u.get("role", "agent"), status=u.get("status", "approved"),
             preferred_language=u.get("preferred_language", "ru"),
             must_change_password=u.get("must_change_password", False),
+            position_id=u.get("position_id"),
             created_at=_pdt(u.get("created_at")),
         ))
     # Tags
@@ -252,6 +267,13 @@ def restore_import(db, data: dict) -> dict:
         db.add(models.Notification(id=n["id"], recipient_id=n.get("recipient_id"), kind=n.get("kind"),
                                    title=n.get("title"), body=n.get("body", ""), payload=n.get("payload", ""),
                                    is_read=n.get("is_read", False), created_at=_pdt(n.get("created_at"))))
+    # Personal aliases (owner & target users now exist)
+    for a in data.get("user_aliases", []):
+        db.add(models.UserAlias(
+            id=a["id"], owner_id=a.get("owner_id"), target_id=a.get("target_id"),
+            alias=a.get("alias", ""), display=a.get("display", True),
+            created_at=_pdt(a.get("created_at")),
+        ))
     # Settings
     for k, v in (data.get("settings") or {}).items():
         db.add(models.AppSetting(key=k, value=v))

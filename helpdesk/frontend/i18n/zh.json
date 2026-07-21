@@ -22,10 +22,36 @@
     "archive": "归档",
     "admin": "管理",
     "users": "用户",
+    "manage_users": "用户管理",
     "requests": "注册申请",
     "settings": "外观设置",
     "notifications": "通知",
     "logout": "退出登录"
+  },
+  "directory": {
+    "title": "用户",
+    "position": "职务",
+    "description": "简介",
+    "no_position": "— 无职务 —",
+    "edit_profile": "我的资料",
+    "you": "这是您",
+    "set_alias": "别名",
+    "empty": "暂无用户"
+  },
+  "profile": {
+    "title": "我的资料",
+    "full_name": "姓名",
+    "description": "简介 / 描述",
+    "position": "职务",
+    "save": "保存资料"
+  },
+  "alias": {
+    "title": "用户别名",
+    "label": "别名（仅您可见）",
+    "display": "对我显示",
+    "hint": "启用后，该用户在整个系统中都会以此别名显示给您。",
+    "save": "保存",
+    "clear": "移除别名"
   },
   "login": {
     "title": "登录",
@@ -142,6 +168,12 @@
     "role_admin": "管理员",
     "role_agent": "员工",
     "role_observer": "观察员",
+    "position": "职务",
+    "positions_title": "职务",
+    "manage_positions": "职务",
+    "new_position": "新职务…",
+    "no_positions": "暂无职务",
+    "position_none": "— 无职务 —",
     "status_pending": "待审核",
     "status_approved": "已批准",
     "status_rejected": "已拒绝",

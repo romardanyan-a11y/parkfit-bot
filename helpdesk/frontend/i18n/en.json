@@ -22,10 +22,36 @@
     "archive": "Archive",
     "admin": "Administration",
     "users": "Users",
+    "manage_users": "Manage users",
     "requests": "Registration requests",
     "settings": "Appearance settings",
     "notifications": "Notifications",
     "logout": "Log out"
+  },
+  "directory": {
+    "title": "Users",
+    "position": "Position",
+    "description": "About",
+    "no_position": "— no position —",
+    "edit_profile": "My profile",
+    "you": "this is you",
+    "set_alias": "Alias",
+    "empty": "No users"
+  },
+  "profile": {
+    "title": "My profile",
+    "full_name": "Name",
+    "description": "About / description",
+    "position": "Position",
+    "save": "Save profile"
+  },
+  "alias": {
+    "title": "User alias",
+    "label": "Alias (only you can see it)",
+    "display": "Show for me",
+    "hint": "When enabled, this user will appear under this alias for you across the whole system.",
+    "save": "Save",
+    "clear": "Remove alias"
   },
   "login": {
     "title": "Sign in",
@@ -142,6 +168,12 @@
     "role_admin": "Administrator",
     "role_agent": "Agent",
     "role_observer": "Observer",
+    "position": "Position",
+    "positions_title": "Positions",
+    "manage_positions": "Positions",
+    "new_position": "New position…",
+    "no_positions": "No positions yet",
+    "position_none": "— no position —",
     "status_pending": "Pending",
     "status_approved": "Approved",
     "status_rejected": "Rejected",

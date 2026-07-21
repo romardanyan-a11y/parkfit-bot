@@ -22,6 +22,8 @@ def user_to_out(user: User) -> dict:
         "status": user.status,
         "preferred_language": user.preferred_language or "ru",
         "must_change_password": bool(user.must_change_password),
+        "position_id": user.position_id,
+        "position_name": user.position.name if user.position else None,
         "created_at": user.created_at,
         "department_ids": [d.id for d in user.departments],
     }

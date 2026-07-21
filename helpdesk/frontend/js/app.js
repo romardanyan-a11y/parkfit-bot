@@ -9,6 +9,7 @@ const state = {
   currentDept: null,
   currentTask: null,
   notifCount: 0,
+  aliases: {},   // { targetUserId: {alias, display} } — personal, private nicknames
 };
 
 const STATUSES = ["open", "in_progress", "need_info", "resolved", "closed"];
@@ -40,10 +41,19 @@ function fmtDay(s) {
   return d.toLocaleDateString(I18N.lang === "zh" ? "zh-CN" : I18N.lang === "en" ? "en-US" : "ru-RU");
 }
 
+// Resolve the name to show for a user: a personal alias (if set + enabled)
+// overrides the real name, but only for the person who created that alias.
+function displayName(u) {
+  if (!u) return "";
+  const a = state.aliases[u.id];
+  if (a && a.display && a.alias) return a.alias;
+  return u.full_name || u.email;
+}
+
 // Render a user's name; observers are highlighted everywhere they appear.
 function userLabel(u) {
   if (!u) return "—";
-  const name = esc(u.full_name || u.email);
+  const name = esc(displayName(u));
   if (u.role === "observer") {
     return `<span class="observer-label" title="${t("admin.role_observer")}">👁 ${name}</span>`;
   }
@@ -52,7 +62,17 @@ function userLabel(u) {
 
 // Plain-text variant for <option> labels (no HTML rendering there).
 function userOptionText(u) {
-  return (u.role === "observer" ? "👁 " : "") + (u.full_name || u.email);
+  return (u.role === "observer" ? "👁 " : "") + displayName(u);
+}
+
+async function loadAliases() {
+  try {
+    const list = await API.get("/api/aliases");
+    state.aliases = {};
+    list.forEach((a) => { state.aliases[a.target_id] = a; });
+  } catch (e) {
+    state.aliases = {};
+  }
 }
 
 function applyPalette(p) {
@@ -107,6 +127,7 @@ async function boot() {
       if (state.me.preferred_language && state.me.preferred_language !== I18N.lang) {
         await I18N.load(state.me.preferred_language);
       }
+      await loadAliases();
     } catch (e) {
       API.setToken(null);
       state.me = null;
@@ -212,6 +233,7 @@ function wireLogin() {
       API.setToken(data.access_token);
       state.me = await API.get("/api/auth/me");
       if (state.me.preferred_language) await I18N.load(state.me.preferred_language);
+      await loadAliases();
       state.view = "catalog";
       render();
     } catch (e) {
@@ -255,10 +277,11 @@ function renderShell() {
   const nav = [
     { key: "catalog", label: t("nav.catalog") },
     { key: "archive", label: t("nav.archive") },
+    { key: "directory", label: t("nav.users") },  // public staff directory, everyone
   ];
   if (isAdmin) {
     nav.push({ key: "requests", label: t("nav.requests"), badge: state.notifCount });
-    nav.push({ key: "users", label: t("nav.users") });
+    nav.push({ key: "users", label: t("nav.manage_users") });
     nav.push({ key: "settings", label: t("nav.settings") });
   }
 
@@ -323,6 +346,7 @@ async function renderMain() {
     switch (state.view) {
       case "catalog": return await viewCatalog(main);
       case "archive": return await viewArchive(main);
+      case "directory": return await viewDirectory(main);
       case "requests": return await viewRequests(main);
       case "users": return await viewUsers(main);
       case "settings": return await viewSettings(main);
@@ -853,6 +877,104 @@ async function viewArchive(main) {
     }));
 }
 
+// ---------- Public staff directory (all users) ----------
+async function viewDirectory(main) {
+  const users = await API.get("/api/users");
+  main.innerHTML = `
+    <div class="topbar"><h2>${t("directory.title")}</h2></div>
+    ${users.length === 0
+      ? `<div class="empty-state">${t("directory.empty")}</div>`
+      : `<div class="grid">${users.map(dirCard).join("")}</div>`}`;
+  users.forEach((u) => {
+    if (u.id === state.me.id) {
+      const b = $(`#prof-${u.id}`); if (b) b.onclick = () => openProfileModal();
+    } else {
+      const b = $(`#alias-${u.id}`); if (b) b.onclick = () => openAliasModal(u);
+    }
+  });
+}
+
+function dirCard(u) {
+  const isMe = u.id === state.me.id;
+  const alias = state.aliases[u.id];
+  const aliasOn = alias && alias.display && alias.alias;
+  return `
+    <div class="card" style="cursor:default">
+      <h3>${userLabel(u)} ${isMe ? `<span class="muted" style="font-size:12px;font-weight:400">(${t("directory.you")})</span>` : ""}</h3>
+      <div class="muted" style="font-size:13px;margin-bottom:8px">${esc(u.email)}</div>
+      <div style="font-size:13px;margin-bottom:6px">
+        <span class="muted">${t("directory.position")}:</span>
+        ${u.position_name ? esc(u.position_name) : `<span class="muted">${t("directory.no_position")}</span>`}
+      </div>
+      <div class="desc" style="min-height:0;margin-bottom:12px">${esc(u.description || "")}</div>
+      ${isMe
+        ? `<button class="btn secondary small" id="prof-${u.id}">${t("directory.edit_profile")}</button>`
+        : `<button class="btn secondary small" id="alias-${u.id}">${t("directory.set_alias")}${aliasOn ? " ✓" : ""}</button>`}
+    </div>`;
+}
+
+async function openProfileModal() {
+  const positions = await API.get("/api/positions");
+  const me = state.me;
+  openModal(`
+    <h3>${t("profile.title")}</h3>
+    <div class="field"><label>${t("profile.full_name")}</label><input id="pf-name" value="${esc(me.full_name || "")}" /></div>
+    <div class="field"><label>${t("profile.position")}</label>
+      <select id="pf-pos">
+        <option value="0">${t("directory.no_position")}</option>
+        ${positions.map((p) => `<option value="${p.id}" ${me.position_id === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+      </select></div>
+    <div class="field"><label>${t("profile.description")}</label><textarea id="pf-desc">${esc(me.description || "")}</textarea></div>
+    <div class="modal-actions">
+      <button class="btn secondary" data-close>${t("common.cancel")}</button>
+      <button class="btn" id="pf-save">${t("profile.save")}</button>
+    </div>`);
+  $("#pf-save").onclick = async () => {
+    state.me = await API.put("/api/users/me/profile", {
+      full_name: $("#pf-name").value.trim(),
+      description: $("#pf-desc").value,
+      position_id: parseInt($("#pf-pos").value) || 0,
+    });
+    closeModal();
+    renderMain();
+  };
+}
+
+function openAliasModal(u) {
+  const existing = state.aliases[u.id] || { alias: "", display: true };
+  const realName = esc(u.full_name || u.email);
+  openModal(`
+    <h3>${t("alias.title")}</h3>
+    <div class="muted" style="margin-bottom:12px">${realName}</div>
+    <div class="field"><label>${t("alias.label")}</label>
+      <input id="al-text" value="${esc(existing.alias || "")}" placeholder="${realName}" /></div>
+    <div class="chip-check" style="margin-bottom:8px">
+      <input type="checkbox" id="al-display" ${existing.display ? "checked" : ""} />
+      <label for="al-display">${t("alias.display")}</label>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:4px">${t("alias.hint")}</div>
+    <div class="modal-actions">
+      <button class="btn danger secondary" id="al-clear">${t("alias.clear")}</button>
+      <button class="btn secondary" data-close>${t("common.cancel")}</button>
+      <button class="btn" id="al-save">${t("alias.save")}</button>
+    </div>`);
+  $("#al-save").onclick = async () => {
+    const res = await API.put(`/api/aliases/${u.id}`, {
+      alias: $("#al-text").value.trim(),
+      display: $("#al-display").checked,
+    });
+    state.aliases[u.id] = res;
+    closeModal();
+    renderMain();
+  };
+  $("#al-clear").onclick = async () => {
+    await API.del(`/api/aliases/${u.id}`);
+    delete state.aliases[u.id];
+    closeModal();
+    renderMain();
+  };
+}
+
 // ---------- Admin: registration requests / notifications ----------
 async function viewRequests(main) {
   const pending = await API.get("/api/admin/users?status=pending");
@@ -912,14 +1034,18 @@ async function viewUsers(main) {
   const depName = (id) => (deps.find((d) => d.id === id) || {}).name || id;
 
   main.innerHTML = `
-    <div class="topbar"><h2>${t("admin.users_title")}</h2></div>
+    <div class="topbar">
+      <h2>${t("admin.users_title")}</h2>
+      <button class="btn secondary" id="manage-pos">${t("admin.manage_positions")}</button>
+    </div>
     <div class="panel"><table>
-      <thead><tr><th>${t("login.email")}</th><th>${t("login.full_name")}</th><th>${t("admin.role")}</th><th>${t("tasks.status")}</th><th>${t("admin.access")}</th><th></th></tr></thead>
+      <thead><tr><th>${t("login.email")}</th><th>${t("login.full_name")}</th><th>${t("admin.role")}</th><th>${t("admin.position")}</th><th>${t("tasks.status")}</th><th>${t("admin.access")}</th><th></th></tr></thead>
       <tbody>${users.map((u) => `
         <tr style="cursor:default" class="${u.role === "observer" ? "observer-row" : ""}">
           <td data-label="${t("login.email")}">${u.role === "observer" ? userLabel(u) : esc(u.email)}</td>
           <td data-label="${t("login.full_name")}">${esc(u.full_name || "")}</td>
           <td data-label="${t("admin.role")}">${t("admin.role_" + u.role)}</td>
+          <td data-label="${t("admin.position")}">${u.position_name ? esc(u.position_name) : "—"}</td>
           <td data-label="${t("tasks.status")}"><span class="badge st-${u.status === "approved" ? "resolved" : u.status === "pending" ? "need_info" : "closed"}">${t("admin.status_" + u.status)}</span></td>
           <td class="muted" data-label="${t("admin.access")}">${u.department_ids.map(depName).map(esc).join(", ") || "—"}</td>
           <td data-label="" style="white-space:nowrap;flex-wrap:wrap;justify-content:flex-end">
@@ -930,6 +1056,7 @@ async function viewUsers(main) {
         </tr>`).join("")}</tbody>
     </table></div>`;
 
+  $("#manage-pos").onclick = openPositionsModal;
   document.querySelectorAll("[data-access]").forEach((b) =>
     b.onclick = () => openAccessModal(users.find((u) => u.id == b.dataset.access), deps));
   document.querySelectorAll("[data-resetpw]").forEach((b) =>
@@ -971,7 +1098,8 @@ function openResetPasswordModal(user) {
   };
 }
 
-function openAccessModal(user, deps) {
+async function openAccessModal(user, deps) {
+  const positions = await API.get("/api/positions");
   openModal(`
     <h3>${t("admin.access")}: ${esc(user.email)}</h3>
     <div class="field"><label>${t("admin.role")}</label>
@@ -979,6 +1107,11 @@ function openAccessModal(user, deps) {
         <option value="agent" ${user.role === "agent" ? "selected" : ""}>${t("admin.role_agent")}</option>
         <option value="observer" ${user.role === "observer" ? "selected" : ""}>${t("admin.role_observer")}</option>
         <option value="admin" ${user.role === "admin" ? "selected" : ""}>${t("admin.role_admin")}</option>
+      </select></div>
+    <div class="field"><label>${t("admin.position")}</label>
+      <select id="ac-pos">
+        <option value="0">${t("admin.position_none")}</option>
+        ${positions.map((p) => `<option value="${p.id}" ${user.position_id === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
       </select></div>
     <div class="field"><label>${t("admin.select_departments")}</label>
       <div class="chip-list">${deps.map((d) => `
@@ -991,9 +1124,45 @@ function openAccessModal(user, deps) {
     const ids = deps.filter((d) => $(`#ac-d-${d.id}`).checked).map((d) => d.id);
     await API.put(`/api/admin/users/${user.id}/role`, { role: $("#ac-role").value });
     await API.put(`/api/admin/users/${user.id}/access`, { department_ids: ids });
+    await API.put(`/api/admin/users/${user.id}/position`, { position_id: parseInt($("#ac-pos").value) || null });
     closeModal();
     renderMain();
   };
+}
+
+// ---------- Admin: manage the job-title (position) catalog ----------
+async function openPositionsModal() {
+  const positions = await API.get("/api/positions");
+  openModal(`
+    <h3>${t("admin.positions_title")}</h3>
+    <div id="pos-list">
+      ${positions.length ? positions.map((p) => `
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <input value="${esc(p.name)}" data-posedit="${p.id}" />
+          <button class="ci-del" data-posdel="${p.id}" title="${t("common.delete")}">✕</button>
+        </div>`).join("") : `<div class="muted">${t("admin.no_positions")}</div>`}
+    </div>
+    <div class="add-inline">
+      <input id="pos-new" placeholder="${t("admin.new_position")}" />
+      <button class="btn small" id="pos-add">+</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close>${t("common.close")}</button>
+    </div>`);
+  const reopen = () => { closeModal(); openPositionsModal(); };
+  $("#pos-add").onclick = async () => {
+    const name = $("#pos-new").value.trim();
+    if (!name) return;
+    await API.post("/api/positions", { name });
+    reopen();
+  };
+  $("#pos-new").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#pos-add").click(); });
+  document.querySelectorAll("[data-posedit]").forEach((inp) =>
+    inp.addEventListener("change", async () => {
+      if (inp.value.trim()) await API.put(`/api/positions/${inp.dataset.posedit}`, { name: inp.value.trim() });
+    }));
+  document.querySelectorAll("[data-posdel]").forEach((b) =>
+    b.onclick = async () => { await API.del(`/api/positions/${b.dataset.posdel}`); reopen(); });
 }
 
 // ---------- Admin: appearance / palette ----------

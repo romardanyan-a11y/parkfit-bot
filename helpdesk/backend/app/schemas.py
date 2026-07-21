@@ -32,8 +32,58 @@ class UserOut(BaseModel):
     status: str
     preferred_language: str
     must_change_password: bool = False
+    position_id: Optional[int] = None
+    position_name: Optional[str] = None
     created_at: datetime
     department_ids: List[int] = []
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- Positions (job titles) ----------
+class PositionIn(BaseModel):
+    name: str
+
+
+class PositionOut(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- User directory / profile / aliases ----------
+class DirectoryUserOut(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    role: str
+    description: str = ""
+    position_id: Optional[int] = None
+    position_name: Optional[str] = None
+
+
+class ProfileIn(BaseModel):
+    full_name: Optional[str] = None
+    description: Optional[str] = None
+    position_id: Optional[int] = None
+
+
+class PositionAssignIn(BaseModel):
+    position_id: Optional[int] = None
+
+
+class AliasIn(BaseModel):
+    alias: str = ""
+    display: bool = True
+
+
+class AliasOut(BaseModel):
+    target_id: int
+    alias: str
+    display: bool
 
     class Config:
         from_attributes = True

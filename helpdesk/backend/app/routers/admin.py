@@ -18,7 +18,8 @@ from ..models import (
 import secrets
 import string
 
-from ..schemas import UserOut, ApproveIn, AccessIn, UserMini, ResetPasswordIn
+from ..schemas import UserOut, ApproveIn, AccessIn, UserMini, ResetPasswordIn, PositionAssignIn
+from ..models import Position
 from ..mailer import send_email
 from ..security import hash_password
 from ..config import settings
@@ -98,6 +99,23 @@ def set_role(user_id: int, data: ApproveIn, admin: User = Depends(get_current_ad
     if data.role not in ROLES:
         raise HTTPException(status_code=400, detail="Bad role")
     user.role = data.role
+    db.commit()
+    db.refresh(user)
+    return user_to_out(user)
+
+
+@router.put("/users/{user_id}/position", response_model=UserOut)
+def set_position(user_id: int, data: PositionAssignIn, admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not data.position_id:
+        user.position_id = None
+    else:
+        pos = db.query(Position).get(data.position_id)
+        if not pos:
+            raise HTTPException(status_code=400, detail="Position not found")
+        user.position_id = pos.id
     db.commit()
     db.refresh(user)
     return user_to_out(user)

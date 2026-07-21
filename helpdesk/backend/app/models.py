@@ -61,6 +61,7 @@ class User(Base):
     role = Column(String(20), default=ROLE_AGENT)
     status = Column(String(20), default=USER_PENDING)  # pending / approved / rejected
     preferred_language = Column(String(5), default="ru")
+    position_id = Column(Integer, ForeignKey("positions.id"), nullable=True)  # job title
     # When True, the user is forced to set a new password on next login
     # (used after an admin resets it to a temporary one).
     must_change_password = Column(Boolean, default=False)
@@ -71,6 +72,34 @@ class User(Base):
         secondary=user_department_access,
         back_populates="allowed_users",
     )
+    position = relationship("Position")
+
+
+class Position(Base):
+    """A job title / должность, managed by admins (e.g. "Главный инженер")."""
+
+    __tablename__ = "positions"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(150), unique=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserAlias(Base):
+    """A personal, private nickname one user assigns to another.
+
+    Only the owner sees the alias, and only when `display` is on.
+    """
+
+    __tablename__ = "user_aliases"
+    __table_args__ = (UniqueConstraint("owner_id", "target_id", name="uq_alias_owner_target"),)
+
+    id = Column(Integer, primary_key=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    target_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    alias = Column(String(150), default="")
+    display = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Department(Base):
