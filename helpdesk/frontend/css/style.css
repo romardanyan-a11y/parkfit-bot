@@ -256,6 +256,26 @@ tbody tr:hover { background: var(--bg); }
 .att-del { font-size: 13px; color: var(--muted); }
 .att-del:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
 
+/* ---------- Toggle switch ---------- */
+.switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+.switch input { display: none; }
+.switch .sl {
+  position: absolute; inset: 0; background: var(--border); border-radius: 24px;
+  cursor: pointer; transition: background 0.2s;
+}
+.switch .sl:before {
+  content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; top: 3px; left: 3px; transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+.switch input:checked + .sl { background: var(--primary); }
+.switch input:checked + .sl:before { transform: translateX(20px); }
+.nav-toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.nav-toggle-row:last-of-type { border-bottom: none; }
+
 /* ---------- Avatars ---------- */
 .ava {
   border-radius: 50%; object-fit: cover; flex-shrink: 0; vertical-align: middle;

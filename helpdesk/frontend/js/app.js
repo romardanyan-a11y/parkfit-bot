@@ -13,6 +13,7 @@ const state = {
   activity: { total: 0, departments: {}, tasks: {} },  // unread-activity counters
   chatUnread: 0,
   currentConvId: null,
+  navTabs: { catalog: true, archive: true, chat: true, directory: true },
 };
 
 const STATUSES = ["open", "in_progress", "need_info", "resolved", "closed"];
@@ -206,6 +207,14 @@ async function fetchChatUnread() {
   setNavDot("chat", state.chatUnread > 0);
 }
 
+// Which sidebar tabs this user may see (admin can hide tabs from regulars).
+async function fetchNavTabs() {
+  try {
+    const r = await API.get("/api/settings/nav");
+    state.navTabs = r.tabs || state.navTabs;
+  } catch (e) { /* keep previous */ }
+}
+
 function startActivityPolling() {
   if (activityTimer) return;
   activityTimer = setInterval(async () => {
@@ -213,6 +222,7 @@ function startActivityPolling() {
     await fetchActivity();
     refreshActivityUI();
     await fetchChatUnread();
+    await fetchNavTabs();  // pick up admin toggles without re-login
   }, 30000);
 }
 
@@ -269,6 +279,7 @@ async function boot() {
         await I18N.load(state.me.preferred_language);
       }
       await loadAliases();
+      await fetchNavTabs();
       await fetchActivity();
       await fetchChatUnread();
       startActivityPolling();
@@ -378,6 +389,7 @@ function wireLogin() {
       state.me = await API.get("/api/auth/me");
       if (state.me.preferred_language) await I18N.load(state.me.preferred_language);
       await loadAliases();
+      await fetchNavTabs();
       await fetchActivity();
       await fetchChatUnread();
       startActivityPolling();
@@ -421,12 +433,19 @@ async function refreshNotifCount() {
 
 function renderShell() {
   const isAdmin = state.me.role === "admin";
-  const nav = [
+  let nav = [
     { key: "catalog", label: t("nav.catalog"), dot: state.activity.total > 0 },
     { key: "archive", label: t("nav.archive") },
     { key: "chat", label: t("nav.chat"), dot: state.chatUnread > 0 },
     { key: "directory", label: t("nav.users") },  // public staff directory, everyone
   ];
+  // Admin-hidden tabs (admins/exempt users get all-true from the server).
+  if (!isAdmin) {
+    nav = nav.filter((n) => state.navTabs[n.key] !== false);
+    if (!nav.some((n) => n.key === state.view) && ["catalog", "archive", "chat", "directory"].includes(state.view)) {
+      state.view = nav.length ? nav[0].key : "catalog";
+    }
+  }
   if (isAdmin) {
     nav.push({ key: "requests", label: t("nav.requests"), badge: state.notifCount });
     nav.push({ key: "users", label: t("nav.manage_users") });
@@ -1247,7 +1266,7 @@ function dirCard(u) {
       ${isMe
         ? `<button class="btn secondary small" id="prof-${u.id}">${t("directory.edit_profile")}</button>`
         : `<div style="display:flex;gap:8px;flex-wrap:wrap">
-             <button class="btn small" data-dm="${u.id}">✉ ${t("chat.write")}</button>
+             ${(state.me.role === "admin" || state.navTabs.chat !== false) ? `<button class="btn small" data-dm="${u.id}">✉ ${t("chat.write")}</button>` : ""}
              <button class="btn secondary small" id="alias-${u.id}">${t("directory.set_alias")}${aliasOn ? " ✓" : ""}</button>
            </div>`}
     </div>`;
@@ -1957,6 +1976,50 @@ async function viewSettings(main) {
   };
 
   await renderBackupSection(main);
+  await renderNavSection(main);
+}
+
+// ---------- Admin: sidebar tab visibility (feature toggles) ----------
+async function renderNavSection(main) {
+  const cfg = await API.get("/api/settings/nav/admin");
+  const users = (await API.get("/api/admin/users?status=approved")).filter((u) => u.role !== "admin");
+  const exempt = new Set(cfg.exempt_user_ids || []);
+  const TAB_LABELS = {
+    catalog: t("nav.catalog"), archive: t("nav.archive"),
+    chat: t("nav.chat"), directory: t("nav.users"),
+  };
+
+  const html = `
+    <div class="section" style="max-width:760px;margin-top:20px">
+      <h2 style="margin:0 0 6px;font-size:18px">${t("admin.nav_title")}</h2>
+      <div class="muted" style="font-size:13px;margin-bottom:14px">${t("admin.nav_hint")}</div>
+      ${Object.keys(TAB_LABELS).map((k) => `
+        <div class="nav-toggle-row">
+          <span>${esc(TAB_LABELS[k])}</span>
+          <label class="switch">
+            <input type="checkbox" id="nt-${k}" ${cfg.tabs[k] !== false ? "checked" : ""} />
+            <span class="sl"></span>
+          </label>
+        </div>`).join("")}
+      <h4 style="margin:18px 0 8px">${t("admin.nav_exempt")}</h4>
+      <div class="chip-list">${users.length ? users.map((u) => `
+        <div class="chip-check">
+          <input type="checkbox" id="ne-${u.id}" ${exempt.has(u.id) ? "checked" : ""} />
+          <label for="ne-${u.id}">${esc(u.full_name || u.email)}</label>
+        </div>`).join("") : `<span class="muted">${t("admin.no_users")}</span>`}</div>
+      <div style="margin-top:14px"><button class="btn" id="nt-save">${t("common.save")}</button></div>
+    </div>`;
+  main.insertAdjacentHTML("beforeend", html);
+
+  $("#nt-save").onclick = async () => {
+    const tabs = {};
+    Object.keys(TAB_LABELS).forEach((k) => (tabs[k] = $(`#nt-${k}`).checked));
+    const ids = users.filter((u) => $(`#ne-${u.id}`).checked).map((u) => u.id);
+    await API.put("/api/settings/nav/admin", { tabs, exempt_user_ids: ids });
+    await fetchNavTabs();
+    state.view = "settings";
+    renderShell();
+  };
 }
 
 // ---------- Admin: backups / export / import ----------
