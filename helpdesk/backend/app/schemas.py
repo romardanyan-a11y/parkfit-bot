@@ -33,7 +33,7 @@ class UserOut(BaseModel):
     preferred_language: str
     must_change_password: bool = False
     position_id: Optional[int] = None
-    position_name: Optional[str] = None
+    position: Optional["PositionOut"] = None
     created_at: datetime
     department_ids: List[int] = []
 
@@ -41,17 +41,18 @@ class UserOut(BaseModel):
         from_attributes = True
 
 
-# ---------- Positions (job titles) ----------
+# ---------- Positions (job titles, localized) ----------
 class PositionIn(BaseModel):
-    name: str
+    name_ru: str
+    name_en: Optional[str] = ""
+    name_zh: Optional[str] = ""
 
 
 class PositionOut(BaseModel):
     id: int
-    name: str
-
-    class Config:
-        from_attributes = True
+    name_ru: str = ""
+    name_en: str = ""
+    name_zh: str = ""
 
 
 # ---------- User directory / profile / aliases ----------
@@ -62,7 +63,7 @@ class DirectoryUserOut(BaseModel):
     role: str
     description: str = ""
     position_id: Optional[int] = None
-    position_name: Optional[str] = None
+    position: Optional["PositionOut"] = None
 
 
 class ProfileIn(BaseModel):
@@ -276,3 +277,8 @@ class NotificationOut(BaseModel):
 class SettingsOut(BaseModel):
     palette: dict
     app_name: str
+
+
+# Resolve forward references to PositionOut (defined after these models).
+UserOut.model_rebuild()
+DirectoryUserOut.model_rebuild()

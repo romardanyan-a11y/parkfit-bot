@@ -76,12 +76,18 @@ class User(Base):
 
 
 class Position(Base):
-    """A job title / должность, managed by admins (e.g. "Главный инженер")."""
+    """A job title / должность, managed by admins (e.g. "Главный инженер").
+
+    Stored in all three interface languages; `name` holds the Russian variant
+    (kept as the original column so existing databases keep working).
+    """
 
     __tablename__ = "positions"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String(150), unique=True, nullable=False)
+    name = Column(String(150), nullable=False)      # Russian (primary)
+    name_en = Column(String(150), default="")
+    name_zh = Column(String(150), default="")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -225,6 +231,18 @@ class TaskEvent(Base):
 
     task = relationship("Task", back_populates="history")
     actor = relationship("User")
+
+
+class TaskRead(Base):
+    """Tracks when a user last viewed a task, to compute unread activity."""
+
+    __tablename__ = "task_reads"
+    __table_args__ = (UniqueConstraint("user_id", "task_id", name="uq_taskread_user_task"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    last_seen_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Notification(Base):

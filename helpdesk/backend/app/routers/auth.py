@@ -8,6 +8,7 @@ from ..models import User, Notification, USER_APPROVED, USER_PENDING, ROLE_ADMIN
 from ..schemas import RegisterIn, TokenOut, UserOut, LanguageIn, ChangePasswordIn
 from ..security import hash_password, verify_password, create_access_token
 from ..mailer import send_email_many
+from .positions import position_to_out as _position_out
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -23,7 +24,7 @@ def user_to_out(user: User) -> dict:
         "preferred_language": user.preferred_language or "ru",
         "must_change_password": bool(user.must_change_password),
         "position_id": user.position_id,
-        "position_name": user.position.name if user.position else None,
+        "position": _position_out(user.position),
         "created_at": user.created_at,
         "department_ids": [d.id for d in user.departments],
     }

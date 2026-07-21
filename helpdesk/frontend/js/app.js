@@ -10,6 +10,7 @@ const state = {
   currentTask: null,
   notifCount: 0,
   aliases: {},   // { targetUserId: {alias, display} } — personal, private nicknames
+  activity: { total: 0, departments: {}, tasks: {} },  // unread-activity counters
 };
 
 const STATUSES = ["open", "in_progress", "need_info", "resolved", "closed"];
@@ -75,6 +76,64 @@ async function loadAliases() {
   }
 }
 
+// Localized job-title name for the current interface language, with fallback.
+function posName(p) {
+  if (!p) return "";
+  return p["name_" + I18N.lang] || p.name_ru || p.name_en || p.name_zh || "";
+}
+
+// ---------- Activity / unread counters ----------
+let activityTimer = null;
+
+async function fetchActivity() {
+  try {
+    state.activity = await API.get("/api/activity");
+  } catch (e) { /* keep previous */ }
+  setNavBadge("catalog", state.activity.total);
+}
+
+function setNavBadge(view, count) {
+  const item = document.querySelector(`.nav-item[data-view="${view}"]`);
+  if (!item) return;
+  let badge = item.querySelector(".nav-badge");
+  if (count > 0) {
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "nav-badge";
+      item.appendChild(badge);
+    }
+    badge.textContent = count;
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+// Update inline badges (department cards, task rows) from state without a re-render.
+function refreshActivityUI() {
+  setNavBadge("catalog", state.activity.total);
+  document.querySelectorAll("[id^='depbadge-']").forEach((el) => {
+    const c = state.activity.departments[el.id.replace("depbadge-", "")] || 0;
+    el.textContent = c || ""; el.hidden = !c;
+  });
+  document.querySelectorAll("[id^='taskbadge-']").forEach((el) => {
+    const c = state.activity.tasks[el.id.replace("taskbadge-", "")] || 0;
+    el.textContent = c || ""; el.hidden = !c;
+  });
+}
+
+function actBadge(count, id) {
+  return `<span class="act-badge" id="${id}"${count ? "" : " hidden"}>${count || ""}</span>`;
+}
+
+function startActivityPolling() {
+  if (activityTimer) return;
+  activityTimer = setInterval(async () => {
+    if (!state.me) return;
+    await fetchActivity();
+    refreshActivityUI();
+  }, 30000);
+}
+
 function applyPalette(p) {
   const r = document.documentElement.style;
   const map = {
@@ -128,6 +187,8 @@ async function boot() {
         await I18N.load(state.me.preferred_language);
       }
       await loadAliases();
+      await fetchActivity();
+      startActivityPolling();
     } catch (e) {
       API.setToken(null);
       state.me = null;
@@ -234,6 +295,8 @@ function wireLogin() {
       state.me = await API.get("/api/auth/me");
       if (state.me.preferred_language) await I18N.load(state.me.preferred_language);
       await loadAliases();
+      await fetchActivity();
+      startActivityPolling();
       state.view = "catalog";
       render();
     } catch (e) {
@@ -275,7 +338,7 @@ async function refreshNotifCount() {
 function renderShell() {
   const isAdmin = state.me.role === "admin";
   const nav = [
-    { key: "catalog", label: t("nav.catalog") },
+    { key: "catalog", label: t("nav.catalog"), badge: state.activity.total },
     { key: "archive", label: t("nav.archive") },
     { key: "directory", label: t("nav.users") },  // public staff directory, everyone
   ];
@@ -329,6 +392,8 @@ function logout() {
   API.setToken(null);
   state.me = null;
   state.authMode = "login";
+  state.activity = { total: 0, departments: {}, tasks: {} };
+  if (activityTimer) { clearInterval(activityTimer); activityTimer = null; }
   render();
 }
 
@@ -361,6 +426,7 @@ async function renderMain() {
 async function viewCatalog(main) {
   const isAdmin = state.me.role === "admin";
   const deps = await API.get("/api/departments");
+  await fetchActivity();
   main.innerHTML = `
     <div class="topbar">
       <h2>${t("catalog.title")}</h2>
@@ -389,7 +455,7 @@ function depCard(d) {
   const isAdmin = state.me.role === "admin";
   return `
     <div class="card" id="dep-${d.id}">
-      <h3>${esc(d.name)}</h3>
+      <h3>${esc(d.name)}${actBadge(state.activity.departments[d.id], "depbadge-" + d.id)}</h3>
       <div class="desc">${esc(d.description || "")}</div>
       <div class="stats">
         <span>${t("catalog.open_tasks")}: <b>${d.open_tasks}</b></span>
@@ -434,6 +500,7 @@ async function viewDepartment(main) {
   const dep = state.currentDept;
   const f = currentFilters();
   const allTags = await API.get("/api/tags");
+  await fetchActivity();
 
   let url = `/api/departments/${dep.id}/tasks?archived=false`;
   if (f.status) url += `&status=${f.status}`;
@@ -500,7 +567,7 @@ function taskTable(tasks) {
       </tr></thead>
       <tbody>${tasks.map((task) => `
         <tr data-task="${task.id}">
-          <td class="mono" data-label="${t("tasks.key")}">${esc(task.key)}</td>
+          <td class="mono" data-label="${t("tasks.key")}">${esc(task.key)}${actBadge(state.activity.tasks[task.id], "taskbadge-" + task.id)}</td>
           <td data-label="${t("tasks.task_title")}">${esc(task.title)}${tagChips(task.tags)}</td>
           <td data-label="${t("tasks.status")}"><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
           <td data-label="${t("tasks.priority")}"><span class="pr-${task.priority}">${t("priority." + task.priority)}</span></td>
@@ -587,6 +654,9 @@ async function viewTaskDetail(main) {
   const assignees = await API.get(`/api/admin/assignees?dep_id=${task.department_id}`);
   const allTags = await API.get("/api/tags");
   const taskTagIds = new Set((task.tags || []).map((tg) => tg.id));
+
+  // Opening a task marks its activity as read for this user.
+  API.post(`/api/tasks/${task.id}/seen`).then(() => fetchActivity()).then(refreshActivityUI).catch(() => {});
   const backLabel = state.view === "archive" ? t("nav.archive") : (state.currentDept ? esc(state.currentDept.name) : t("nav.catalog"));
 
   main.innerHTML = `
@@ -904,7 +974,7 @@ function dirCard(u) {
       <div class="muted" style="font-size:13px;margin-bottom:8px">${esc(u.email)}</div>
       <div style="font-size:13px;margin-bottom:6px">
         <span class="muted">${t("directory.position")}:</span>
-        ${u.position_name ? esc(u.position_name) : `<span class="muted">${t("directory.no_position")}</span>`}
+        ${posName(u.position) ? esc(posName(u.position)) : `<span class="muted">${t("directory.no_position")}</span>`}
       </div>
       <div class="desc" style="min-height:0;margin-bottom:12px">${esc(u.description || "")}</div>
       ${isMe
@@ -922,7 +992,7 @@ async function openProfileModal() {
     <div class="field"><label>${t("profile.position")}</label>
       <select id="pf-pos">
         <option value="0">${t("directory.no_position")}</option>
-        ${positions.map((p) => `<option value="${p.id}" ${me.position_id === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+        ${positions.map((p) => `<option value="${p.id}" ${me.position_id === p.id ? "selected" : ""}>${esc(posName(p))}</option>`).join("")}
       </select></div>
     <div class="field"><label>${t("profile.description")}</label><textarea id="pf-desc">${esc(me.description || "")}</textarea></div>
     <div class="modal-actions">
@@ -1045,7 +1115,7 @@ async function viewUsers(main) {
           <td data-label="${t("login.email")}">${u.role === "observer" ? userLabel(u) : esc(u.email)}</td>
           <td data-label="${t("login.full_name")}">${esc(u.full_name || "")}</td>
           <td data-label="${t("admin.role")}">${t("admin.role_" + u.role)}</td>
-          <td data-label="${t("admin.position")}">${u.position_name ? esc(u.position_name) : "—"}</td>
+          <td data-label="${t("admin.position")}">${posName(u.position) ? esc(posName(u.position)) : "—"}</td>
           <td data-label="${t("tasks.status")}"><span class="badge st-${u.status === "approved" ? "resolved" : u.status === "pending" ? "need_info" : "closed"}">${t("admin.status_" + u.status)}</span></td>
           <td class="muted" data-label="${t("admin.access")}">${u.department_ids.map(depName).map(esc).join(", ") || "—"}</td>
           <td data-label="" style="white-space:nowrap;flex-wrap:wrap;justify-content:flex-end">
@@ -1111,7 +1181,7 @@ async function openAccessModal(user, deps) {
     <div class="field"><label>${t("admin.position")}</label>
       <select id="ac-pos">
         <option value="0">${t("admin.position_none")}</option>
-        ${positions.map((p) => `<option value="${p.id}" ${user.position_id === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+        ${positions.map((p) => `<option value="${p.id}" ${user.position_id === p.id ? "selected" : ""}>${esc(posName(p))}</option>`).join("")}
       </select></div>
     <div class="field"><label>${t("admin.select_departments")}</label>
       <div class="chip-list">${deps.map((d) => `
@@ -1133,34 +1203,48 @@ async function openAccessModal(user, deps) {
 // ---------- Admin: manage the job-title (position) catalog ----------
 async function openPositionsModal() {
   const positions = await API.get("/api/positions");
+  const langCols = (idPrefix, p) => `
+    <div class="row" style="gap:8px">
+      <input placeholder="Русский" value="${esc(p ? p.name_ru : "")}" id="${idPrefix}-ru" />
+      <input placeholder="English" value="${esc(p ? p.name_en : "")}" id="${idPrefix}-en" />
+      <input placeholder="中文" value="${esc(p ? p.name_zh : "")}" id="${idPrefix}-zh" />
+    </div>`;
   openModal(`
     <h3>${t("admin.positions_title")}</h3>
     <div id="pos-list">
       ${positions.length ? positions.map((p) => `
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-          <input value="${esc(p.name)}" data-posedit="${p.id}" />
-          <button class="ci-del" data-posdel="${p.id}" title="${t("common.delete")}">✕</button>
-        </div>`).join("") : `<div class="muted">${t("admin.no_positions")}</div>`}
+        <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px">
+          <div style="flex:1">${langCols("pe-" + p.id, p)}</div>
+          <button class="btn small" data-possave="${p.id}">${t("common.save")}</button>
+          <button class="ci-del" data-posdel="${p.id}" title="${t("common.delete")}" style="margin-top:8px">✕</button>
+        </div>`).join("") : `<div class="muted" style="margin-bottom:10px">${t("admin.no_positions")}</div>`}
     </div>
-    <div class="add-inline">
-      <input id="pos-new" placeholder="${t("admin.new_position")}" />
-      <button class="btn small" id="pos-add">+</button>
-    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:14px 0" />
+    <label>${t("admin.new_position")}</label>
+    ${langCols("pos-new", null)}
+    <div style="margin-top:8px"><button class="btn small" id="pos-add">+ ${t("common.create")}</button></div>
     <div class="modal-actions">
       <button class="btn" data-close>${t("common.close")}</button>
     </div>`);
   const reopen = () => { closeModal(); openPositionsModal(); };
+  const readVals = (prefix) => ({
+    name_ru: $(`#${prefix}-ru`).value.trim(),
+    name_en: $(`#${prefix}-en`).value.trim(),
+    name_zh: $(`#${prefix}-zh`).value.trim(),
+  });
   $("#pos-add").onclick = async () => {
-    const name = $("#pos-new").value.trim();
-    if (!name) return;
-    await API.post("/api/positions", { name });
+    const v = readVals("pos-new");
+    if (!v.name_ru) return alert(t("admin.position") + ": Русский");
+    await API.post("/api/positions", v);
     reopen();
   };
-  $("#pos-new").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#pos-add").click(); });
-  document.querySelectorAll("[data-posedit]").forEach((inp) =>
-    inp.addEventListener("change", async () => {
-      if (inp.value.trim()) await API.put(`/api/positions/${inp.dataset.posedit}`, { name: inp.value.trim() });
-    }));
+  document.querySelectorAll("[data-possave]").forEach((b) =>
+    b.onclick = async () => {
+      const v = readVals("pe-" + b.dataset.possave);
+      if (!v.name_ru) return;
+      await API.put(`/api/positions/${b.dataset.possave}`, v);
+      reopen();
+    });
   document.querySelectorAll("[data-posdel]").forEach((b) =>
     b.onclick = async () => { await API.del(`/api/positions/${b.dataset.posdel}`); reopen(); });
 }

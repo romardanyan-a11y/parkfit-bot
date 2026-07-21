@@ -6,6 +6,7 @@ from ..deps import get_current_user
 from ..models import User, Position, UserAlias, USER_APPROVED
 from ..schemas import DirectoryUserOut, ProfileIn, AliasIn, AliasOut, UserOut
 from .auth import user_to_out
+from .positions import position_to_out
 
 router = APIRouter(prefix="/api", tags=["users"])
 
@@ -18,7 +19,7 @@ def _directory_row(u: User) -> dict:
         "role": u.role,
         "description": u.description or "",
         "position_id": u.position_id,
-        "position_name": u.position.name if u.position else None,
+        "position": position_to_out(u.position),
     }
 
 

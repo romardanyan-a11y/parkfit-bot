@@ -113,7 +113,8 @@ def build_export(db, include_files: bool = True) -> dict:
             "created_at": _dt(u.created_at),
             "department_ids": [d.id for d in u.departments],
         } for u in users],
-        "positions": [{"id": p.id, "name": p.name, "created_at": _dt(p.created_at)}
+        "positions": [{"id": p.id, "name": p.name, "name_en": p.name_en or "",
+                       "name_zh": p.name_zh or "", "created_at": _dt(p.created_at)}
                       for p in db.query(models.Position).all()],
         "user_aliases": [{
             "id": a.id, "owner_id": a.owner_id, "target_id": a.target_id,
@@ -168,6 +169,7 @@ def restore_import(db, data: dict) -> dict:
 
     # Wipe existing data (children first, then association tables via Core).
     db.query(models.Notification).delete()
+    db.query(models.TaskRead).delete()
     db.query(models.ChecklistItem).delete()
     db.query(models.TaskEvent).delete()
     db.query(models.Attachment).delete()
@@ -185,7 +187,11 @@ def restore_import(db, data: dict) -> dict:
 
     # Positions first — users reference them via position_id.
     for p in data.get("positions", []):
-        db.add(models.Position(id=p["id"], name=p["name"], created_at=_pdt(p.get("created_at"))))
+        db.add(models.Position(
+            id=p["id"], name=p["name"],
+            name_en=p.get("name_en", ""), name_zh=p.get("name_zh", ""),
+            created_at=_pdt(p.get("created_at")),
+        ))
     db.flush()
 
     # Departments
