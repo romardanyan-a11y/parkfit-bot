@@ -11,6 +11,8 @@ const state = {
   notifCount: 0,
   aliases: {},   // { targetUserId: {alias, display} } — personal, private nicknames
   activity: { total: 0, departments: {}, tasks: {} },  // unread-activity counters
+  chatUnread: 0,
+  currentConvId: null,
 };
 
 const STATUSES = ["open", "in_progress", "need_info", "resolved", "closed"];
@@ -82,14 +84,40 @@ function displayName(u) {
   return u.full_name || u.email;
 }
 
-// Render a user's name; observers are highlighted everywhere they appear.
+// Round avatar: the user's photo, or their initial on a colored circle.
+function avaHtml(u, size) {
+  size = size || 22;
+  const style = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.45)}px`;
+  if (u && u.avatar_name) {
+    return `<img class="ava" style="${style}" alt=""
+      src="/api/users/${u.id}/avatar?token=${encodeURIComponent(API.token)}&v=${encodeURIComponent(u.avatar_name)}" />`;
+  }
+  const ch = ((u && (displayName(u) || "?")) || "?").trim().charAt(0).toUpperCase() || "?";
+  const hue = u ? (u.id * 57) % 360 : 0;
+  return `<span class="ava ava-init" style="${style};background:hsl(${hue},45%,48%)">${esc(ch)}</span>`;
+}
+
+// Group avatar (photo or 👥 circle).
+function groupAvaHtml(conv, size) {
+  size = size || 34;
+  const style = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.45)}px`;
+  if (conv.avatar_name) {
+    return `<img class="ava" style="${style}" alt=""
+      src="/api/chat/conversations/${conv.id}/avatar?token=${encodeURIComponent(API.token)}&v=${encodeURIComponent(conv.avatar_name)}" />`;
+  }
+  const hue = (conv.id * 83) % 360;
+  return `<span class="ava ava-init" style="${style};background:hsl(${hue},40%,45%)">${conv.type === "group" ? "👥" : "?"}</span>`;
+}
+
+// Render a user's name with a round avatar miniature on the left;
+// observers stay highlighted everywhere they appear.
 function userLabel(u) {
   if (!u) return "—";
   const name = esc(displayName(u));
-  if (u.role === "observer") {
-    return `<span class="observer-label" title="${t("admin.role_observer")}">👁 ${name}</span>`;
-  }
-  return name;
+  const inner = u.role === "observer"
+    ? `<span class="observer-label" title="${t("admin.role_observer")}">👁 ${name}</span>`
+    : name;
+  return `<span class="ulab">${avaHtml(u, 20)}${inner}</span>`;
 }
 
 // Plain-text variant for <option> labels (no HTML rendering there).
@@ -170,12 +198,21 @@ async function markTaskSeen(task) {
   try { await API.post(`/api/tasks/${task.id}/seen`); } catch (e) { /* ignore */ }
 }
 
+async function fetchChatUnread() {
+  try {
+    const r = await API.get("/api/chat/unread");
+    state.chatUnread = r.total || 0;
+  } catch (e) { /* keep previous */ }
+  setNavDot("chat", state.chatUnread > 0);
+}
+
 function startActivityPolling() {
   if (activityTimer) return;
   activityTimer = setInterval(async () => {
     if (!state.me) return;
     await fetchActivity();
     refreshActivityUI();
+    await fetchChatUnread();
   }, 30000);
 }
 
@@ -233,6 +270,7 @@ async function boot() {
       }
       await loadAliases();
       await fetchActivity();
+      await fetchChatUnread();
       startActivityPolling();
     } catch (e) {
       API.setToken(null);
@@ -341,6 +379,7 @@ function wireLogin() {
       if (state.me.preferred_language) await I18N.load(state.me.preferred_language);
       await loadAliases();
       await fetchActivity();
+      await fetchChatUnread();
       startActivityPolling();
       state.view = "catalog";
       render();
@@ -385,6 +424,7 @@ function renderShell() {
   const nav = [
     { key: "catalog", label: t("nav.catalog"), dot: state.activity.total > 0 },
     { key: "archive", label: t("nav.archive") },
+    { key: "chat", label: t("nav.chat"), dot: state.chatUnread > 0 },
     { key: "directory", label: t("nav.users") },  // public staff directory, everyone
   ];
   if (isAdmin) {
@@ -439,11 +479,17 @@ function logout() {
   state.me = null;
   state.authMode = "login";
   state.activity = { total: 0, departments: {}, tasks: {} };
+  state.chatUnread = 0;
+  state.currentConvId = null;
   if (activityTimer) { clearInterval(activityTimer); activityTimer = null; }
+  if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
   render();
 }
 
 async function renderMain() {
+  // Leaving the chat view stops its message polling.
+  if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
+
   // Update sidebar active state
   document.querySelectorAll(".nav-item[data-view]").forEach((el) =>
     el.classList.toggle("active", el.dataset.view === state.view && !state.currentDept && !state.currentTask));
@@ -457,6 +503,7 @@ async function renderMain() {
     switch (state.view) {
       case "catalog": return await viewCatalog(main);
       case "archive": return await viewArchive(main);
+      case "chat": return await viewChat(main);
       case "directory": return await viewDirectory(main);
       case "requests": return await viewRequests(main);
       case "users": return await viewUsers(main);
@@ -1170,6 +1217,13 @@ async function viewDirectory(main) {
       const b = $(`#alias-${u.id}`); if (b) b.onclick = () => openAliasModal(u);
     }
   });
+  document.querySelectorAll("[data-dm]").forEach((b) =>
+    b.onclick = async () => {
+      const conv = await API.post(`/api/chat/dm/${b.dataset.dm}`);
+      state.view = "chat";
+      state.currentConvId = conv.id;
+      renderShell();
+    });
 }
 
 function dirCard(u) {
@@ -1178,8 +1232,13 @@ function dirCard(u) {
   const aliasOn = alias && alias.display && alias.alias;
   return `
     <div class="card" style="cursor:default">
-      <h3>${userLabel(u)} ${isMe ? `<span class="muted" style="font-size:12px;font-weight:400">(${t("directory.you")})</span>` : ""}</h3>
-      <div class="muted" style="font-size:13px;margin-bottom:8px">${esc(u.email)}</div>
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+        ${avaHtml(u, 44)}
+        <div style="min-width:0">
+          <h3 style="margin:0">${u.role === "observer" ? userLabel(u) : esc(displayName(u))} ${isMe ? `<span class="muted" style="font-size:12px;font-weight:400">(${t("directory.you")})</span>` : ""}</h3>
+          <div class="muted" style="font-size:13px">${esc(u.email)}</div>
+        </div>
+      </div>
       <div style="font-size:13px;margin-bottom:6px">
         <span class="muted">${t("directory.position")}:</span>
         ${posName(u.position) ? esc(posName(u.position)) : `<span class="muted">${t("directory.no_position")}</span>`}
@@ -1187,7 +1246,10 @@ function dirCard(u) {
       <div class="desc" style="min-height:0;margin-bottom:12px">${esc(u.description || "")}</div>
       ${isMe
         ? `<button class="btn secondary small" id="prof-${u.id}">${t("directory.edit_profile")}</button>`
-        : `<button class="btn secondary small" id="alias-${u.id}">${t("directory.set_alias")}${aliasOn ? " ✓" : ""}</button>`}
+        : `<div style="display:flex;gap:8px;flex-wrap:wrap">
+             <button class="btn small" data-dm="${u.id}">✉ ${t("chat.write")}</button>
+             <button class="btn secondary small" id="alias-${u.id}">${t("directory.set_alias")}${aliasOn ? " ✓" : ""}</button>
+           </div>`}
     </div>`;
 }
 
@@ -1196,6 +1258,15 @@ async function openProfileModal() {
   const me = state.me;
   openModal(`
     <h3>${t("profile.title")}</h3>
+    <div class="field"><label>${t("profile.avatar")}</label>
+      <div style="display:flex;align-items:center;gap:14px">
+        <span id="pf-ava">${avaHtml(me, 64)}</span>
+        <div>
+          <input type="file" id="pf-avatar" accept="image/*" />
+          <div class="muted" style="font-size:12px;margin-top:4px">${t("profile.avatar_hint")}</div>
+        </div>
+      </div>
+    </div>
     <div class="field"><label>${t("profile.full_name")}</label><input id="pf-name" value="${esc(me.full_name || "")}" /></div>
     <div class="field"><label>${t("profile.position")}</label>
       <select id="pf-pos">
@@ -1207,6 +1278,14 @@ async function openProfileModal() {
       <button class="btn secondary" data-close>${t("common.cancel")}</button>
       <button class="btn" id="pf-save">${t("profile.save")}</button>
     </div>`);
+  $("#pf-avatar").onchange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      state.me = await API.upload("/api/users/me/avatar", f);
+      $("#pf-ava").innerHTML = avaHtml(state.me, 64);
+    } catch (err) { alert(err.message); }
+  };
   $("#pf-save").onclick = async () => {
     state.me = await API.put("/api/users/me/profile", {
       full_name: $("#pf-name").value.trim(),
@@ -1251,6 +1330,380 @@ function openAliasModal(u) {
     closeModal();
     renderMain();
   };
+}
+
+// ===========================================================================
+// Chat (DMs + groups)
+// ===========================================================================
+let chatTimer = null;
+
+function convTitle(conv) {
+  if (conv.type === "group") return conv.name || "—";
+  const other = (conv.members || []).find((m) => m && m.id !== state.me.id);
+  return other ? displayName(other) : "—";
+}
+
+function convAvatar(conv, size) {
+  if (conv.type === "group") return groupAvaHtml(conv, size);
+  const other = (conv.members || []).find((m) => m && m.id !== state.me.id);
+  return avaHtml(other, size);
+}
+
+function chatFileUrl(f, kind) {
+  return `/api/chat/files/${f.id}/${kind}?token=${encodeURIComponent(API.token)}`;
+}
+
+function chatMedia(files) {
+  if (!files || !files.length) return "";
+  return `<div class="att-grid">` + files.map((f) => {
+    const footer = `
+      <div class="att-foot">
+        <span class="att-name" title="${esc(f.filename)}">${esc(f.filename)}</span>
+        <span class="att-size">${fmtSize(f.size)}</span>
+        <a class="att-dl" href="${chatFileUrl(f, "download")}" download title="${t("tasks.download")}">⬇</a>
+      </div>`;
+    if ((f.content_type || "").startsWith("image/")) {
+      return `<div class="att-card">
+        <img class="att-thumb" src="${chatFileUrl(f, "view")}" data-lightbox="1"
+             onerror="this.closest('.att-card').classList.add('broken')" />
+        <div class="att-fallback">🖼 ${t("tasks.preview_unavailable")}</div>${footer}</div>`;
+    }
+    if ((f.content_type || "").startsWith("video/")) {
+      return `<div class="att-card">
+        <video class="att-thumb" src="${chatFileUrl(f, "view")}" controls preload="metadata"></video>${footer}</div>`;
+    }
+    return `<div class="att-card doc"><div class="att-docicon">📄</div>${footer}</div>`;
+  }).join("") + `</div>`;
+}
+
+async function viewChat(main) {
+  const convs = await API.get("/api/chat/conversations");
+  state._convs = convs;
+  main.innerHTML = `
+    <div class="topbar">
+      <h2>${t("chat.title")}</h2>
+      <button class="btn" id="new-group">👥 + ${t("chat.new_group")}</button>
+    </div>
+    <div class="chat-wrap">
+      <div class="chat-list" id="conv-list">
+        ${convs.length ? convs.map((c) => `
+          <div class="conv-item ${state.currentConvId === c.id ? "active" : ""}" data-conv="${c.id}">
+            ${convAvatar(c, 38)}
+            <div class="conv-info">
+              <div class="conv-name">${esc(convTitle(c))}</div>
+              <div class="conv-preview">${c.last_message ? esc((c.last_message.body || (c.last_message.has_files ? "📎" : ""))) : ""}</div>
+            </div>
+            ${c.unread ? `<span class="unread-dot"></span>` : ""}
+          </div>`).join("") : `<div class="empty-state" style="padding:20px">${t("chat.no_convs")}</div>`}
+      </div>
+      <div class="chat-main" id="chat-main">
+        <div class="empty-state" style="margin:auto">${t("chat.pick")}</div>
+      </div>
+      <div class="chat-side" id="chat-side"></div>
+    </div>`;
+
+  $("#new-group").onclick = openGroupModal;
+  document.querySelectorAll("[data-conv]").forEach((el) =>
+    el.addEventListener("click", () => {
+      state.currentConvId = parseInt(el.dataset.conv);
+      document.querySelectorAll(".conv-item").forEach((x) => x.classList.toggle("active", x === el));
+      el.querySelector(".unread-dot")?.remove();
+      openConversation(state.currentConvId);
+    }));
+
+  if (state.currentConvId && convs.some((c) => c.id === state.currentConvId)) {
+    openConversation(state.currentConvId);
+  }
+}
+
+async function openConversation(convId) {
+  const conv = (state._convs || []).find((c) => c.id === convId);
+  if (!conv) return;
+  const mainEl = $("#chat-main");
+  const msgs = await API.get(`/api/chat/conversations/${convId}/messages`);
+  fetchChatUnread();
+
+  mainEl.innerHTML = `
+    <div class="chat-header">
+      ${convAvatar(conv, 34)}
+      <span class="ch-name">${esc(convTitle(conv))}</span>
+      ${conv.type === "group" ? `
+        <button class="c-act" id="grp-leave" title="${t("chat.leave")}">🚪</button>
+        ${(conv.created_by_id === state.me.id || state.me.role === "admin")
+          ? `<button class="c-act c-act-del" id="grp-del" title="${t("chat.delete_group")}">🗑</button>` : ""}` : ""}
+    </div>
+    <div class="chat-msgs" id="chat-msgs">${renderChatMessages(msgs)}</div>
+    <div class="chat-composer">
+      <textarea id="cm-body" placeholder="${t("chat.message")}"></textarea>
+      <input type="file" id="cm-files" multiple accept="image/*,video/*,*/*" />
+      <button class="btn" id="cm-send">${t("chat.send")}</button>
+    </div>`;
+  scrollChatDown();
+  renderChatSide(conv);
+
+  const send = async () => {
+    const body = $("#cm-body").value.trim();
+    const files = [...$("#cm-files").files];
+    if (!body && !files.length) return;
+    $("#cm-send").disabled = true;
+    try {
+      const msg = await API.post(`/api/chat/conversations/${convId}/messages`, { body });
+      for (const f of files) await API.upload(`/api/chat/messages/${msg.id}/files`, f);
+      $("#cm-body").value = ""; $("#cm-files").value = "";
+      await refreshMessages(convId, true);
+    } catch (e) { alert(e.message); }
+    $("#cm-send").disabled = false;
+  };
+  $("#cm-send").onclick = send;
+  $("#cm-body").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+
+  const leave = $("#grp-leave");
+  if (leave) leave.onclick = async () => {
+    if (!confirm(t("chat.leave") + "?")) return;
+    await API.del(`/api/chat/groups/${convId}/members/${state.me.id}`);
+    state.currentConvId = null;
+    renderMain();
+  };
+  const gdel = $("#grp-del");
+  if (gdel) gdel.onclick = async () => {
+    if (!confirm(t("common.confirm_delete"))) return;
+    await API.del(`/api/chat/groups/${convId}`);
+    state.currentConvId = null;
+    renderMain();
+  };
+
+  // Poll for new messages every 5s while the conversation is open.
+  if (chatTimer) clearInterval(chatTimer);
+  chatTimer = setInterval(() => refreshMessages(convId, false), 5000);
+}
+
+let _lastMsgKey = "";
+function _msgKey(msgs) {
+  return msgs.length + ":" + (msgs.length ? msgs[msgs.length - 1].id : 0)
+    + ":" + msgs.reduce((n, m) => n + (m.files ? m.files.length : 0), 0);
+}
+
+async function refreshMessages(convId, force) {
+  if (state.view !== "chat" || state.currentConvId !== convId) return;
+  try {
+    const msgs = await API.get(`/api/chat/conversations/${convId}/messages`);
+    const key = _msgKey(msgs);
+    if (!force && key === _lastMsgKey) return;
+    _lastMsgKey = key;
+    const box = $("#chat-msgs");
+    if (box) { box.innerHTML = renderChatMessages(msgs); scrollChatDown(); }
+    fetchChatUnread();
+  } catch (e) { /* transient */ }
+}
+
+function renderChatMessages(msgs) {
+  if (!msgs.length) return `<div class="empty-state">${t("chat.no_messages")}</div>`;
+  return msgs.map((m) => `
+    <div class="chat-msg ${m.author && m.author.id === state.me.id ? "own" : ""}">
+      ${avaHtml(m.author, 30)}
+      <div class="bubble">
+        <div class="m-head">
+          <span class="m-author">${esc(m.author ? displayName(m.author) : "—")}</span>
+          <span class="m-time">${fmtDate(m.created_at)}</span>
+        </div>
+        ${m.body ? `<div class="m-body">${esc(m.body)}</div>` : ""}
+        ${chatMedia(m.files)}
+      </div>
+    </div>`).join("");
+}
+
+function scrollChatDown() {
+  const box = $("#chat-msgs");
+  if (box) box.scrollTop = box.scrollHeight;
+}
+
+// ---------- Right side panel: search / files / members / tasks ----------
+function renderChatSide(conv) {
+  const side = $("#chat-side");
+  if (!side) return;
+  const isGroup = conv.type === "group";
+  const tabs = [
+    { k: "search", label: t("chat.search") },
+    { k: "files", label: t("chat.files") },
+  ];
+  if (isGroup) {
+    tabs.push({ k: "members", label: t("chat.members") });
+    tabs.push({ k: "tasks", label: t("chat.tasks") });
+  }
+  side.innerHTML = `
+    <div class="tabs">${tabs.map((x, i) => `<div class="tab ${i === 0 ? "active" : ""}" data-cstab="${x.k}">${x.label}</div>`).join("")}</div>
+    <div id="cs-body"></div>`;
+  const show = (k) => {
+    document.querySelectorAll("[data-cstab]").forEach((el) => el.classList.toggle("active", el.dataset.cstab === k));
+    if (k === "search") renderSideSearch(conv);
+    else if (k === "files") renderSideFiles(conv);
+    else if (k === "members") renderSideMembers(conv);
+    else renderSideTasks(conv);
+  };
+  document.querySelectorAll("[data-cstab]").forEach((el) => el.addEventListener("click", () => show(el.dataset.cstab)));
+  show("search");
+}
+
+function renderSideSearch(conv) {
+  const box = $("#cs-body");
+  box.innerHTML = `
+    <input id="cs-q" placeholder="${t("chat.search_ph")}" />
+    <div id="cs-results" style="margin-top:10px"></div>`;
+  const run = async () => {
+    const q = $("#cs-q").value.trim();
+    if (!q) { $("#cs-results").innerHTML = ""; return; }
+    const res = await API.get(`/api/chat/conversations/${conv.id}/messages?q=${encodeURIComponent(q)}`);
+    $("#cs-results").innerHTML = res.length ? res.map((m) => `
+      <div class="sr-item">
+        <b>${esc(m.author ? displayName(m.author) : "—")}</b>
+        <span class="m-time">${fmtDate(m.created_at)}</span>
+        <div>${esc(m.body)}</div>
+      </div>`).join("") : `<div class="muted">${t("chat.nothing_found")}</div>`;
+  };
+  $("#cs-q").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+  $("#cs-q").addEventListener("input", () => { clearTimeout(box._t); box._t = setTimeout(run, 400); });
+}
+
+async function renderSideFiles(conv) {
+  const files = await API.get(`/api/chat/conversations/${conv.id}/files`);
+  $("#cs-body").innerHTML = files.length
+    ? chatMedia(files)
+    : `<div class="muted">${t("chat.no_files")}</div>`;
+}
+
+function renderSideMembers(conv) {
+  const box = $("#cs-body");
+  const canKick = conv.created_by_id === state.me.id || state.me.role === "admin";
+  box.innerHTML = `
+    ${(conv.members || []).map((m) => `
+      <div class="cs-item">
+        ${avaHtml(m, 26)}
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(displayName(m))}</span>
+        ${canKick && m.id !== state.me.id ? `<button class="ci-del" data-kick="${m.id}">✕</button>` : ""}
+      </div>`).join("")}
+    <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+      <button class="btn secondary small" id="cs-add">+ ${t("chat.add_members")}</button>
+      <label class="btn secondary small" style="cursor:pointer;text-align:center">
+        ${t("chat.group_avatar")}
+        <input type="file" id="cs-gava" accept="image/*" style="display:none" />
+      </label>
+    </div>`;
+  document.querySelectorAll("[data-kick]").forEach((b) =>
+    b.onclick = async () => {
+      if (!confirm(t("common.confirm_delete"))) return;
+      await API.del(`/api/chat/groups/${conv.id}/members/${b.dataset.kick}`);
+      renderMain();
+    });
+  $("#cs-add").onclick = async () => {
+    const users = await API.get("/api/users");
+    const inGroup = new Set((conv.members || []).map((m) => m.id));
+    const candidates = users.filter((u) => !inGroup.has(u.id));
+    openModal(`
+      <h3>${t("chat.add_members")}</h3>
+      <div class="chip-list">${candidates.map((u) => `
+        <div class="chip-check"><input type="checkbox" id="am-${u.id}" /><label for="am-${u.id}">${esc(displayName(u))}</label></div>`).join("") || `<span class="muted">—</span>`}</div>
+      <div class="modal-actions">
+        <button class="btn secondary" data-close>${t("common.cancel")}</button>
+        <button class="btn" id="am-save">${t("common.save")}</button>
+      </div>`);
+    $("#am-save").onclick = async () => {
+      const ids = candidates.filter((u) => $(`#am-${u.id}`).checked).map((u) => u.id);
+      if (ids.length) await API.post(`/api/chat/groups/${conv.id}/members`, { user_ids: ids });
+      closeModal();
+      renderMain();
+    };
+  };
+  $("#cs-gava").onchange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try { await API.upload(`/api/chat/groups/${conv.id}/avatar`, f); renderMain(); }
+    catch (err) { alert(err.message); }
+  };
+}
+
+async function renderSideTasks(conv) {
+  const tasks = await API.get(`/api/chat/conversations/${conv.id}/tasks`);
+  const box = $("#cs-body");
+  box.innerHTML = `
+    ${tasks.length ? tasks.map((task) => `
+      <div class="cs-item">
+        <span class="mono" style="flex-shrink:0">${esc(task.key)}</span>
+        <a href="#" data-opentask="${task.id}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(task.title)}</a>
+        <span class="badge st-${task.status}" style="flex-shrink:0">${t("status." + task.status)}</span>
+        <button class="ci-del" data-untask="${task.id}" title="${t("chat.detach")}">✕</button>
+      </div>`).join("") : `<div class="muted">—</div>`}
+    <button class="btn secondary small" id="cs-attach" style="margin-top:10px">+ ${t("chat.attach_task")}</button>`;
+  document.querySelectorAll("[data-opentask]").forEach((a) =>
+    a.onclick = async (e) => {
+      e.preventDefault();
+      state.currentTask = await API.get(`/api/tasks/${a.dataset.opentask}`);
+      state.currentDept = null;
+      state.view = "catalog";
+      renderMain();
+    });
+  document.querySelectorAll("[data-untask]").forEach((b) =>
+    b.onclick = async () => {
+      await API.del(`/api/chat/conversations/${conv.id}/tasks/${b.dataset.untask}`);
+      renderSideTasks(conv);
+    });
+  $("#cs-attach").onclick = async () => {
+    const deps = await API.get("/api/departments");
+    openModal(`
+      <h3>${t("chat.attach_task")}</h3>
+      <div class="field"><select id="at-dep">
+        <option value="">${t("chat.select_department")}</option>
+        ${deps.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join("")}
+      </select></div>
+      <div class="field"><select id="at-task" disabled><option value="">${t("chat.select_task")}</option></select></div>
+      <div class="modal-actions">
+        <button class="btn secondary" data-close>${t("common.cancel")}</button>
+        <button class="btn" id="at-save" disabled>${t("chat.attach_task")}</button>
+      </div>`);
+    $("#at-dep").onchange = async (e) => {
+      const depId = e.target.value;
+      const sel = $("#at-task");
+      sel.innerHTML = `<option value="">${t("chat.select_task")}</option>`;
+      sel.disabled = !depId;
+      if (!depId) return;
+      const tasks2 = await API.get(`/api/departments/${depId}/tasks?archived=false`);
+      sel.innerHTML += tasks2.map((x) => `<option value="${x.id}">${esc(x.key)} — ${esc(x.title)}</option>`).join("");
+      sel.onchange = () => { $("#at-save").disabled = !sel.value; };
+    };
+    $("#at-save").onclick = async () => {
+      const tid = parseInt($("#at-task").value);
+      if (!tid) return;
+      await API.post(`/api/chat/conversations/${conv.id}/tasks`, { task_id: tid });
+      closeModal();
+      renderSideTasks(conv);
+    };
+  };
+}
+
+function openGroupModal() {
+  API.get("/api/users").then((users) => {
+    const others = users.filter((u) => u.id !== state.me.id);
+    openModal(`
+      <h3>${t("chat.new_group")}</h3>
+      <div class="field"><label>${t("chat.group_name")}</label><input id="gr-name" /></div>
+      <div class="field"><label>${t("chat.group_members_pick")}</label>
+        <div class="chip-list">${others.map((u) => `
+          <div class="chip-check"><input type="checkbox" id="gm-${u.id}" /><label for="gm-${u.id}">${esc(displayName(u))}</label></div>`).join("") || `<span class="muted">—</span>`}</div></div>
+      <div class="modal-actions">
+        <button class="btn secondary" data-close>${t("common.cancel")}</button>
+        <button class="btn" id="gr-save">${t("common.create")}</button>
+      </div>`);
+    $("#gr-save").onclick = async () => {
+      const name = $("#gr-name").value.trim();
+      if (!name) return;
+      const ids = others.filter((u) => $(`#gm-${u.id}`).checked).map((u) => u.id);
+      const conv = await API.post("/api/chat/groups", { name, member_ids: ids });
+      closeModal();
+      state.currentConvId = conv.id;
+      renderMain();
+    };
+  });
 }
 
 // ---------- Admin: registration requests / notifications ----------

@@ -65,6 +65,7 @@ class User(Base):
     # When True, the user is forced to set a new password on next login
     # (used after an admin resets it to a temporary one).
     must_change_password = Column(Boolean, default=False)
+    avatar_name = Column(String(500), nullable=True)  # stored avatar file
     created_at = Column(DateTime, default=datetime.utcnow)
 
     departments = relationship(
@@ -266,6 +267,92 @@ class Notification(Base):
     payload = Column(Text, default="")  # e.g. related user/task id
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Chat: direct messages and groups
+# ---------------------------------------------------------------------------
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True)
+    type = Column(String(10), default="dm")   # dm | group
+    name = Column(String(255), default="")    # group name (empty for DMs)
+    avatar_name = Column(String(500), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    members = relationship("ConversationMember", back_populates="conversation",
+                           cascade="all, delete-orphan")
+    messages = relationship("ChatMessage", back_populates="conversation",
+                            cascade="all, delete-orphan")
+
+
+class ConversationMember(Base):
+    __tablename__ = "conversation_members"
+    __table_args__ = (UniqueConstraint("conversation_id", "user_id", name="uq_conv_member"),)
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+    conversation = relationship("Conversation", back_populates="members")
+    user = relationship("User")
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
+    author_id = Column(Integer, ForeignKey("users.id"))
+    body = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    conversation = relationship("Conversation", back_populates="messages")
+    author = relationship("User")
+    files = relationship("ChatFile", back_populates="message", cascade="all, delete-orphan")
+
+
+class ChatFile(Base):
+    __tablename__ = "chat_files"
+
+    id = Column(Integer, primary_key=True)
+    message_id = Column(Integer, ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True)
+    filename = Column(String(500))
+    stored_name = Column(String(500))
+    content_type = Column(String(200))
+    size = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    message = relationship("ChatMessage", back_populates="files")
+
+
+class ConversationRead(Base):
+    """When a member last viewed a conversation (for unread markers)."""
+
+    __tablename__ = "conversation_reads"
+    __table_args__ = (UniqueConstraint("conversation_id", "user_id", name="uq_conv_read"),)
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    last_seen_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ConversationTask(Base):
+    """Existing tasks pinned to a group chat."""
+
+    __tablename__ = "conversation_tasks"
+    __table_args__ = (UniqueConstraint("conversation_id", "task_id", name="uq_conv_task"),)
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    task = relationship("Task")
 
 
 class AppSetting(Base):

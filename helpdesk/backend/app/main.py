@@ -10,7 +10,7 @@ from .config import settings
 from .database import Base, engine, SessionLocal
 from .seed import seed_admin
 from .backup import start_scheduler
-from .routers import auth, departments, tasks, comments, admin, notifications, tags, backups, positions, users, activity, settings as settings_router
+from .routers import auth, departments, tasks, comments, admin, notifications, tags, backups, positions, users, activity, chat, settings as settings_router
 
 app = FastAPI(title="HelpDesk", version="1.0.0")
 
@@ -33,6 +33,7 @@ app.include_router(backups.router)
 app.include_router(positions.router)
 app.include_router(users.router)
 app.include_router(activity.router)
+app.include_router(chat.router)
 app.include_router(settings_router.router)
 
 
@@ -89,6 +90,11 @@ def ensure_schema():
         if "edited_at" not in ccols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE comments ADD COLUMN edited_at DATETIME"))
+
+    ucols = {c["name"] for c in insp.get_columns("users")}
+    if "avatar_name" not in ucols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN avatar_name VARCHAR(500)"))
 
 
 @app.get("/api/health")

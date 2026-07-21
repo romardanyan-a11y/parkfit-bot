@@ -25,6 +25,7 @@ def user_to_out(user: User) -> dict:
         "must_change_password": bool(user.must_change_password),
         "position_id": user.position_id,
         "position": _position_out(user.position),
+        "avatar_name": user.avatar_name,
         "created_at": user.created_at,
         "department_ids": [d.id for d in user.departments],
     }

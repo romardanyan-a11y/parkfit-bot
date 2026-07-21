@@ -34,6 +34,7 @@ class UserOut(BaseModel):
     must_change_password: bool = False
     position_id: Optional[int] = None
     position: Optional["PositionOut"] = None
+    avatar_name: Optional[str] = None
     created_at: datetime
     department_ids: List[int] = []
 
@@ -64,6 +65,7 @@ class DirectoryUserOut(BaseModel):
     description: str = ""
     position_id: Optional[int] = None
     position: Optional["PositionOut"] = None
+    avatar_name: Optional[str] = None
 
 
 class ProfileIn(BaseModel):
@@ -190,6 +192,7 @@ class UserMini(BaseModel):
     email: str
     full_name: str
     role: str = "agent"
+    avatar_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -275,6 +278,46 @@ class NotificationOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ---------- Chat ----------
+class ChatFileOut(BaseModel):
+    id: int
+    filename: str
+    content_type: str
+    size: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ChatMessageOut(BaseModel):
+    id: int
+    body: str
+    created_at: datetime
+    author: Optional[UserMini]
+    files: List[ChatFileOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+class ChatMessageIn(BaseModel):
+    body: str = ""
+
+
+class GroupIn(BaseModel):
+    name: str
+    member_ids: List[int] = []
+
+
+class MembersIn(BaseModel):
+    user_ids: List[int] = []
+
+
+class ConvTaskIn(BaseModel):
+    task_id: int
 
 
 # ---------- Settings / palette ----------

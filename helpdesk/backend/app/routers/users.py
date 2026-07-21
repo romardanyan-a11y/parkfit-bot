@@ -1,6 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import User, Position, UserAlias, USER_APPROVED
@@ -20,7 +25,73 @@ def _directory_row(u: User) -> dict:
         "description": u.description or "",
         "position_id": u.position_id,
         "position": position_to_out(u.position),
+        "avatar_name": u.avatar_name,
     }
+
+
+def process_avatar_upload(file: UploadFile) -> str:
+    """Center-crop to a square, resize to 256px and store as JPEG.
+    Returns the stored file name. Raises HTTPException on bad images."""
+    try:
+        from PIL import Image
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+        img = Image.open(file.file)
+        img = img.convert("RGB")
+        w, h = img.size
+        s = min(w, h)
+        img = img.crop(((w - s) // 2, (h - s) // 2, (w + s) // 2, (h + s) // 2)).resize((256, 256))
+        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+        name = f"{uuid.uuid4().hex}.jpg"
+        img.save(os.path.join(settings.UPLOAD_DIR, name), "JPEG", quality=88)
+        return name
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="Not a valid image")
+
+
+def _remove_stored(name):
+    if name:
+        path = os.path.join(settings.UPLOAD_DIR, name)
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+@router.post("/users/me/avatar", response_model=UserOut)
+def upload_my_avatar(file: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    name = process_avatar_upload(file)
+    _remove_stored(user.avatar_name)
+    user.avatar_name = name
+    db.commit()
+    db.refresh(user)
+    return user_to_out(user)
+
+
+@router.delete("/users/me/avatar", response_model=UserOut)
+def delete_my_avatar(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _remove_stored(user.avatar_name)
+    user.avatar_name = None
+    db.commit()
+    db.refresh(user)
+    return user_to_out(user)
+
+
+@router.get("/users/{user_id}/avatar")
+def get_avatar(user_id: int, request: Request, token: str = None, db: Session = Depends(get_db)):
+    # Token-in-query auth so plain <img> tags can load avatars.
+    from .comments import _resolve_user
+    _resolve_user(request, token, db)
+    target = db.query(User).get(user_id)
+    if not target or not target.avatar_name:
+        raise HTTPException(status_code=404, detail="No avatar")
+    path = os.path.join(settings.UPLOAD_DIR, target.avatar_name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="No avatar")
+    return FileResponse(path, media_type="image/jpeg")
 
 
 @router.get("/users", response_model=list[DirectoryUserOut])

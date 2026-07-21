@@ -110,10 +110,32 @@ def build_export(db, include_files: bool = True) -> dict:
             "full_name": u.full_name, "description": u.description, "role": u.role,
             "status": u.status, "preferred_language": u.preferred_language,
             "must_change_password": bool(u.must_change_password),
-            "position_id": u.position_id,
+            "position_id": u.position_id, "avatar_name": u.avatar_name,
             "created_at": _dt(u.created_at),
             "department_ids": [d.id for d in u.departments],
         } for u in users],
+        "conversations": [{
+            "id": c.id, "type": c.type, "name": c.name or "",
+            "avatar_name": c.avatar_name, "created_by_id": c.created_by_id,
+            "created_at": _dt(c.created_at),
+        } for c in db.query(models.Conversation).all()],
+        "conversation_members": [{
+            "id": m.id, "conversation_id": m.conversation_id, "user_id": m.user_id,
+            "joined_at": _dt(m.joined_at),
+        } for m in db.query(models.ConversationMember).all()],
+        "chat_messages": [{
+            "id": m.id, "conversation_id": m.conversation_id, "author_id": m.author_id,
+            "body": m.body or "", "created_at": _dt(m.created_at),
+        } for m in db.query(models.ChatMessage).all()],
+        "chat_files": [{
+            "id": f.id, "message_id": f.message_id, "filename": f.filename,
+            "stored_name": f.stored_name, "content_type": f.content_type,
+            "size": f.size, "created_at": _dt(f.created_at),
+        } for f in db.query(models.ChatFile).all()],
+        "conversation_tasks": [{
+            "id": r.id, "conversation_id": r.conversation_id, "task_id": r.task_id,
+            "created_at": _dt(r.created_at),
+        } for r in db.query(models.ConversationTask).all()],
         "positions": [{"id": p.id, "name": p.name, "name_en": p.name_en or "",
                        "name_zh": p.name_zh or "", "created_at": _dt(p.created_at)}
                       for p in db.query(models.Position).all()],
@@ -178,6 +200,12 @@ def restore_import(db, data: dict) -> dict:
     db.query(models.Attachment).delete()
     db.query(models.Comment).delete()
     db.query(models.UserAlias).delete()
+    db.query(models.ChatFile).delete()
+    db.query(models.ChatMessage).delete()
+    db.query(models.ConversationRead).delete()
+    db.query(models.ConversationTask).delete()
+    db.query(models.ConversationMember).delete()
+    db.query(models.Conversation).delete()
     db.execute(models.task_tags.delete())
     db.execute(models.user_department_access.delete())
     db.query(models.Task).delete()
@@ -212,6 +240,7 @@ def restore_import(db, data: dict) -> dict:
             preferred_language=u.get("preferred_language", "ru"),
             must_change_password=u.get("must_change_password", False),
             position_id=u.get("position_id"),
+            avatar_name=u.get("avatar_name"),
             created_at=_pdt(u.get("created_at")),
         ))
     # Tags
@@ -284,6 +313,36 @@ def restore_import(db, data: dict) -> dict:
             alias=a.get("alias", ""), display=a.get("display", True),
             created_at=_pdt(a.get("created_at")),
         ))
+    # Chat: conversations -> members -> messages -> files -> pinned tasks
+    for c in data.get("conversations", []):
+        db.add(models.Conversation(
+            id=c["id"], type=c.get("type", "dm"), name=c.get("name", ""),
+            avatar_name=c.get("avatar_name"), created_by_id=c.get("created_by_id"),
+            created_at=_pdt(c.get("created_at")),
+        ))
+    db.flush()
+    for m in data.get("conversation_members", []):
+        db.add(models.ConversationMember(
+            id=m["id"], conversation_id=m["conversation_id"], user_id=m["user_id"],
+            joined_at=_pdt(m.get("joined_at")),
+        ))
+    for m in data.get("chat_messages", []):
+        db.add(models.ChatMessage(
+            id=m["id"], conversation_id=m["conversation_id"], author_id=m.get("author_id"),
+            body=m.get("body", ""), created_at=_pdt(m.get("created_at")),
+        ))
+    db.flush()
+    for f in data.get("chat_files", []):
+        db.add(models.ChatFile(
+            id=f["id"], message_id=f["message_id"], filename=f.get("filename"),
+            stored_name=f.get("stored_name"), content_type=f.get("content_type"),
+            size=f.get("size", 0), created_at=_pdt(f.get("created_at")),
+        ))
+    for r in data.get("conversation_tasks", []):
+        db.add(models.ConversationTask(
+            id=r["id"], conversation_id=r["conversation_id"], task_id=r["task_id"],
+            created_at=_pdt(r.get("created_at")),
+        ))
     # Settings
     for k, v in (data.get("settings") or {}).items():
         db.add(models.AppSetting(key=k, value=v))
@@ -317,12 +376,19 @@ def write_archive(path: str, data: dict):
     the JSON is DEFLATE-compressed.
     """
     import json
+    # Every stored file the backup must carry: task/comment attachments,
+    # chat files, user avatars and group avatars.
+    stored_names = (
+        [a.get("stored_name") for a in data.get("attachments", [])]
+        + [f.get("stored_name") for f in data.get("chat_files", [])]
+        + [u.get("avatar_name") for u in data.get("users", [])]
+        + [c.get("avatar_name") for c in data.get("conversations", [])]
+    )
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr("data.json", json.dumps(data, ensure_ascii=False),
                     compress_type=zipfile.ZIP_DEFLATED)
         seen = set()
-        for a in data.get("attachments", []):
-            stored = a.get("stored_name")
+        for stored in stored_names:
             if not stored or stored in seen:
                 continue
             seen.add(stored)
