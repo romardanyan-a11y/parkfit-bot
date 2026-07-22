@@ -326,14 +326,43 @@ tbody tr:hover { background: var(--bg); }
 .sr-item { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 .sr-item .m-time { font-size: 11px; color: var(--muted); }
 
+/* Header buttons: back (phone) and info/side-panel toggle (narrow screens) */
+.chat-back, .chat-info {
+  display: none; background: none; border: none; cursor: pointer;
+  font-size: 20px; line-height: 1; color: var(--text); padding: 4px 8px; border-radius: 8px;
+}
+.chat-back:hover, .chat-info:hover { background: var(--bg); }
+
+/* Tablets: side panel hidden behind the ⓘ toggle */
 @media (max-width: 980px) {
   .chat-side { display: none; }
+  .chat-info { display: inline-flex; }
+  .chat-wrap.side-open .chat-side { display: block; }
 }
+
+/* Phones: messenger flow — full-screen list, tap -> full-screen conversation */
 @media (max-width: 860px) {
-  .chat-wrap { flex-direction: column; height: auto; }
-  .chat-list { width: 100%; max-height: 220px; border-right: none; border-bottom: 1px solid var(--border); }
-  .chat-msgs { max-height: 50vh; }
-  .chat-side { display: block; width: 100%; border-left: none; border-top: 1px solid var(--border); }
+  .chat-wrap { height: calc(100vh - 150px); min-height: 380px; }
+  .chat-list { width: 100%; border-right: none; }
+  .chat-main { display: none; }
+  .chat-side { display: none; border-left: none; width: 100%; }
+  .conv-item { padding: 13px 14px; }        /* bigger touch targets */
+  .conv-name { font-size: 15px; }
+  .conv-preview { font-size: 13px; }
+
+  .chat-wrap.conv-open { flex-direction: column; }
+  .chat-wrap.conv-open .chat-list { display: none; }
+  .chat-wrap.conv-open .chat-main { display: flex; flex: 1; min-height: 0; }
+  .chat-wrap.conv-open .chat-back { display: inline-flex; }
+  /* ⓘ panel replaces the message area but keeps the header (with the toggle) */
+  .chat-wrap.conv-open.side-open .chat-main { flex: 0 0 auto; }
+  .chat-wrap.conv-open.side-open .chat-msgs,
+  .chat-wrap.conv-open.side-open .chat-composer { display: none; }
+  .chat-wrap.conv-open.side-open .chat-side { display: block; flex: 1; overflow-y: auto; }
+
+  .chat-composer { flex-wrap: wrap; align-items: center; }
+  .chat-composer textarea { flex: 1 1 100%; }
+  .chat-composer input[type=file] { flex: 1; width: auto; min-width: 0; }
 }
 
 /* Comment edit/delete actions */

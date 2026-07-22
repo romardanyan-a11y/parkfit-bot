@@ -1241,6 +1241,7 @@ async function viewDirectory(main) {
       const conv = await API.post(`/api/chat/dm/${b.dataset.dm}`);
       state.view = "chat";
       state.currentConvId = conv.id;
+      state._openConvNow = true;  // jump straight into the conversation, incl. phones
       renderShell();
     });
 }
@@ -1403,7 +1404,7 @@ async function viewChat(main) {
       <h2>${t("chat.title")}</h2>
       <button class="btn" id="new-group">👥 + ${t("chat.new_group")}</button>
     </div>
-    <div class="chat-wrap">
+    <div class="chat-wrap" id="chat-wrap">
       <div class="chat-list" id="conv-list">
         ${convs.length ? convs.map((c) => `
           <div class="conv-item ${state.currentConvId === c.id ? "active" : ""}" data-conv="${c.id}">
@@ -1430,9 +1431,15 @@ async function viewChat(main) {
       openConversation(state.currentConvId);
     }));
 
-  if (state.currentConvId && convs.some((c) => c.id === state.currentConvId)) {
+  // Desktop: auto-open the last conversation (list stays visible beside it).
+  // Phone: land on the full-screen chat list, except when explicitly asked
+  // to jump into a conversation (the "Write" button / a fresh group).
+  const isPhone = window.matchMedia("(max-width: 860px)").matches;
+  if (state.currentConvId && convs.some((c) => c.id === state.currentConvId)
+      && (!isPhone || state._openConvNow)) {
     openConversation(state.currentConvId);
   }
+  state._openConvNow = false;
 }
 
 async function openConversation(convId) {
@@ -1442,14 +1449,19 @@ async function openConversation(convId) {
   const msgs = await API.get(`/api/chat/conversations/${convId}/messages`);
   fetchChatUnread();
 
+  const wrap = $("#chat-wrap");
+  if (wrap) { wrap.classList.add("conv-open"); wrap.classList.remove("side-open"); }
+
   mainEl.innerHTML = `
     <div class="chat-header">
+      <button class="chat-back" id="chat-back" aria-label="back">←</button>
       ${convAvatar(conv, 34)}
       <span class="ch-name">${esc(convTitle(conv))}</span>
       ${conv.type === "group" ? `
         <button class="c-act" id="grp-leave" title="${t("chat.leave")}">🚪</button>
         ${(conv.created_by_id === state.me.id || state.me.role === "admin")
           ? `<button class="c-act c-act-del" id="grp-del" title="${t("chat.delete_group")}">🗑</button>` : ""}` : ""}
+      <button class="chat-info" id="chat-info" title="${t("chat.search")} / ${t("chat.files")}">ⓘ</button>
     </div>
     <div class="chat-msgs" id="chat-msgs">${renderChatMessages(msgs)}</div>
     <div class="chat-composer">
@@ -1477,6 +1489,15 @@ async function openConversation(convId) {
   $("#cm-body").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
+
+  // Phone: back arrow returns to the full-screen conversations list.
+  $("#chat-back").onclick = () => {
+    state.currentConvId = null;
+    if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
+    renderMain();
+  };
+  // Narrow screens: ⓘ toggles the search/attachments panel.
+  $("#chat-info").onclick = () => { if (wrap) wrap.classList.toggle("side-open"); };
 
   const leave = $("#grp-leave");
   if (leave) leave.onclick = async () => {
@@ -1720,6 +1741,7 @@ function openGroupModal() {
       const conv = await API.post("/api/chat/groups", { name, member_ids: ids });
       closeModal();
       state.currentConvId = conv.id;
+      state._openConvNow = true;
       renderMain();
     };
   });
