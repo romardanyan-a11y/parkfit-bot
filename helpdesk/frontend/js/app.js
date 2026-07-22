@@ -1465,13 +1465,21 @@ async function openConversation(convId) {
     </div>
     <div class="chat-msgs" id="chat-msgs">${renderChatMessages(msgs)}</div>
     <div class="chat-composer">
-      <textarea id="cm-body" placeholder="${t("chat.message")}"></textarea>
-      <input type="file" id="cm-files" multiple accept="image/*,video/*,*/*" />
-      <button class="btn" id="cm-send">${t("chat.send")}</button>
+      <label class="attach-btn" id="cm-attach" title="${t("tasks.upload")}">📎
+        <span class="attach-count" id="cm-count" hidden></span>
+        <input type="file" id="cm-files" multiple accept="image/*,video/*,*/*" hidden />
+      </label>
+      <textarea id="cm-body" rows="1" placeholder="${t("chat.message")}"></textarea>
+      <button class="send-btn" id="cm-send" title="${t("chat.send")}">➤</button>
     </div>`;
   scrollChatDown();
   renderChatSide(conv);
 
+  const resetAttach = () => {
+    $("#cm-files").value = "";
+    $("#cm-attach").classList.remove("has-files");
+    $("#cm-count").hidden = true;
+  };
   const send = async () => {
     const body = $("#cm-body").value.trim();
     const files = [...$("#cm-files").files];
@@ -1480,15 +1488,33 @@ async function openConversation(convId) {
     try {
       const msg = await API.post(`/api/chat/conversations/${convId}/messages`, { body });
       for (const f of files) await API.upload(`/api/chat/messages/${msg.id}/files`, f);
-      $("#cm-body").value = ""; $("#cm-files").value = "";
+      $("#cm-body").value = "";
+      $("#cm-body").style.height = "";
+      resetAttach();
       await refreshMessages(convId, true);
     } catch (e) { alert(e.message); }
     $("#cm-send").disabled = false;
   };
   $("#cm-send").onclick = send;
-  $("#cm-body").addEventListener("keydown", (e) => {
+  const bodyTa = $("#cm-body");
+  bodyTa.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
+  // Auto-grow the input like messengers do (up to the CSS max-height).
+  bodyTa.addEventListener("input", () => {
+    bodyTa.style.height = "auto";
+    bodyTa.style.height = Math.min(bodyTa.scrollHeight, 120) + "px";
+  });
+  // Keep the latest messages in view when the phone keyboard opens.
+  bodyTa.addEventListener("focus", () => setTimeout(scrollChatDown, 250));
+  // Paperclip badge shows how many files are picked.
+  $("#cm-files").onchange = (e) => {
+    const n = e.target.files.length;
+    $("#cm-attach").classList.toggle("has-files", n > 0);
+    const c = $("#cm-count");
+    c.hidden = !n;
+    c.textContent = n;
+  };
 
   // Phone: back arrow returns to the full-screen conversations list.
   $("#chat-back").onclick = () => {
