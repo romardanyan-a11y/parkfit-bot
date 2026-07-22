@@ -1451,6 +1451,7 @@ async function openConversation(convId) {
 
   const wrap = $("#chat-wrap");
   if (wrap) { wrap.classList.add("conv-open"); wrap.classList.remove("side-open"); }
+  syncChatViewport();
 
   mainEl.innerHTML = `
     <div class="chat-header">
@@ -1469,7 +1470,7 @@ async function openConversation(convId) {
         <span class="attach-count" id="cm-count" hidden></span>
         <input type="file" id="cm-files" multiple accept="image/*,video/*,*/*" hidden />
       </label>
-      <textarea id="cm-body" rows="1" placeholder="${t("chat.message")}"></textarea>
+      <textarea id="cm-body" rows="1" placeholder="${t("chat.message")}" enterkeyhint="send"></textarea>
       <button class="send-btn" id="cm-send" title="${t("chat.send")}">➤</button>
     </div>`;
   scrollChatDown();
@@ -1583,6 +1584,33 @@ function renderChatMessages(msgs) {
 function scrollChatDown() {
   const box = $("#chat-msgs");
   if (box) box.scrollTop = box.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+// iOS Safari keyboard fix. On iOS the on-screen keyboard does not shrink the
+// layout viewport (dvh stays the same) — Safari instead pans the page, which
+// made the chat "drift" when the input was focused. We pin the full-screen
+// chat overlay to the VISUAL viewport instead: its height/offset follow the
+// keyboard, the composer stays glued right above it, nothing shifts.
+// ---------------------------------------------------------------------------
+function syncChatViewport() {
+  const wrap = document.getElementById("chat-wrap");
+  if (!wrap) return;
+  const phone = window.matchMedia("(max-width: 860px)").matches;
+  if (!phone || !wrap.classList.contains("conv-open")) {
+    wrap.style.height = ""; wrap.style.top = "";
+    return;
+  }
+  const vv = window.visualViewport;
+  if (!vv) return;
+  wrap.style.top = vv.offsetTop + "px";
+  wrap.style.height = vv.height + "px";
+  window.scrollTo(0, 0);   // cancel Safari's own focus panning
+  scrollChatDown();
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncChatViewport);
+  window.visualViewport.addEventListener("scroll", syncChatViewport);
 }
 
 // ---------- Right side panel: search / files / members / tasks ----------

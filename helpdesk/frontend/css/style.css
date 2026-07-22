@@ -370,6 +370,10 @@ tbody tr:hover { background: var(--bg); }
 
 /* Phones: messenger flow — full-screen list, tap -> full-screen conversation */
 @media (max-width: 860px) {
+  /* iOS Safari auto-zooms the page when focusing a field with font-size < 16px.
+     16px on form controls prevents that zoom (and the layout jump it causes). */
+  input, select, textarea { font-size: 16px; }
+
   .chat-wrap { height: calc(100vh - 150px); min-height: 380px; }
   .chat-list { width: 100%; border-right: none; }
   .chat-main { display: none; }
