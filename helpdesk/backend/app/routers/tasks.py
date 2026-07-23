@@ -27,7 +27,8 @@ from ..schemas import (
     ChecklistItemUpdate,
     ChecklistItemOut,
 )
-from ..mailer import send_email
+from ..mailer import send_email, mail_text
+from ..mailcfg import get_mail_config
 from ..config import settings
 from .departments import visible_department_ids
 
@@ -54,12 +55,27 @@ def notify_assignee(db: Session, task: Task, assignee_id: int, actor: User):
         body=f"{task.key}: {task.title}",
         payload=str(task.id),
     ))
-    link = f"{settings.APP_BASE_URL}/"
-    send_email(
-        assignee.email,
-        f"[HelpDesk] {task.key}: {task.title}",
-        f"You have been assigned to task {task.key} — {task.title}.\n\nOpen HelpDesk: {link}",
-    )
+    cfg = get_mail_config(db)
+    if cfg["enabled"] and cfg["notify_assigned"]:
+        subject, body = mail_text("assigned", assignee.preferred_language,
+                                  key=task.key, title=task.title, url=cfg["base_url"])
+        send_email(assignee.email, subject, body)
+
+
+def notify_new_task(db: Session, task: Task, dep: Department, author: User):
+    """Email everyone who can see the department (plus admins) about a new task."""
+    from ..models import USER_APPROVED
+    cfg = get_mail_config(db)
+    if not (cfg["enabled"] and cfg["notify_new_task"]):
+        return
+    recipients = {u.id: u for u in dep.allowed_users if u.status == USER_APPROVED}
+    for a in db.query(User).filter(User.role == ROLE_ADMIN, User.status == USER_APPROVED).all():
+        recipients[a.id] = a
+    recipients.pop(author.id, None)
+    for u in recipients.values():
+        subject, body = mail_text("new_task", u.preferred_language,
+                                  key=task.key, title=task.title, dep=dep.name, url=cfg["base_url"])
+        send_email(u.email, subject, body)
 
 
 def ensure_department_access(user: User, dep_id: int):
@@ -143,6 +159,7 @@ def create_task(dep_id: int, data: TaskIn, user: User = Depends(get_current_user
         notify_assignee(db, task, data.assignee_id, user)
     db.commit()
     db.refresh(task)
+    notify_new_task(db, task, dep, user)
     return task
 
 
@@ -195,6 +212,7 @@ def update_task(task_id: int, data: TaskUpdateIn, user: User = Depends(get_curre
     if data.due_date is not None and data.due_date != task.due_date:
         log_event(db, task, user, "due_date", str(data.due_date))
         task.due_date = data.due_date
+        task.due_reminded_at = None  # re-arm the due-soon reminder for the new date
 
     if data.tag_ids is not None:
         apply_tags(db, task, data.tag_ids)

@@ -2052,7 +2052,83 @@ async function viewSettings(main) {
   };
 
   await renderBackupSection(main);
+  await renderMailSection(main);
   await renderNavSection(main);
+}
+
+// ---------- Admin: mail service (SMTP + notification toggles) ----------
+async function renderMailSection(main) {
+  const cfg = await API.get("/api/admin/mail");
+  const swRow = (id, on, label) => `
+    <div class="nav-toggle-row">
+      <span>${label}</span>
+      <label class="switch"><input type="checkbox" id="${id}" ${on ? "checked" : ""} /><span class="sl"></span></label>
+    </div>`;
+
+  main.insertAdjacentHTML("beforeend", `
+    <div class="section" style="max-width:760px;margin-top:20px">
+      <h2 style="margin:0 0 6px;font-size:18px">${t("admin.mail_title")}</h2>
+      <div class="muted" style="font-size:13px;margin-bottom:8px">${t("admin.mail_hint")}</div>
+      <div style="font-size:13px;margin-bottom:14px">${cfg.enabled ? t("admin.mail_on") : t("admin.mail_off")}</div>
+      <div class="row">
+        <div class="field"><label>${t("admin.mail_host")}</label><input id="ml-host" value="${esc(cfg.host || "")}" placeholder="smtp.example.com" /></div>
+        <div class="field" style="max-width:120px"><label>${t("admin.mail_port")}</label><input id="ml-port" type="number" value="${cfg.port}" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>${t("admin.mail_user")}</label><input id="ml-user" value="${esc(cfg.user || "")}" autocomplete="off" /></div>
+        <div class="field"><label>${t("admin.mail_password")}</label>
+          <input id="ml-pass" type="password" autocomplete="new-password"
+                 placeholder="${cfg.has_password ? "••••••" : ""}${cfg.has_password ? " (" + t("admin.mail_password_keep") + ")" : ""}" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>${t("admin.mail_from")}</label><input id="ml-from" value="${esc(cfg.mail_from || "")}" /></div>
+        <div class="field"><label>${t("admin.mail_base_url")}</label><input id="ml-url" value="${esc(cfg.base_url || "")}" /></div>
+      </div>
+      <div style="display:flex;gap:22px;margin:4px 0 12px">
+        <div class="chip-check"><input type="checkbox" id="ml-tls" ${cfg.tls ? "checked" : ""} /><label for="ml-tls">${t("admin.mail_tls")}</label></div>
+        <div class="chip-check"><input type="checkbox" id="ml-ssl" ${cfg.ssl ? "checked" : ""} /><label for="ml-ssl">${t("admin.mail_ssl")}</label></div>
+      </div>
+      ${swRow("ml-new", cfg.notify_new_task, t("admin.mail_notify_new"))}
+      ${swRow("ml-assigned", cfg.notify_assigned, t("admin.mail_notify_assigned"))}
+      ${swRow("ml-due", cfg.notify_due_soon, t("admin.mail_notify_due"))}
+      <div class="field" style="max-width:260px;margin-top:12px">
+        <label>${t("admin.mail_due_hours")}</label>
+        <input id="ml-hours" type="number" min="1" value="${cfg.due_soon_hours}" />
+      </div>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button class="btn" id="ml-save">${t("common.save")}</button>
+        <button class="btn secondary" id="ml-test">✉ ${t("admin.mail_test")}</button>
+      </div>
+    </div>`);
+
+  $("#ml-save").onclick = async () => {
+    const body = {
+      host: $("#ml-host").value.trim(),
+      port: parseInt($("#ml-port").value) || 587,
+      user: $("#ml-user").value.trim(),
+      mail_from: $("#ml-from").value.trim(),
+      base_url: $("#ml-url").value.trim(),
+      tls: $("#ml-tls").checked,
+      ssl: $("#ml-ssl").checked,
+      notify_new_task: $("#ml-new").checked,
+      notify_assigned: $("#ml-assigned").checked,
+      notify_due_soon: $("#ml-due").checked,
+      due_soon_hours: parseInt($("#ml-hours").value) || 24,
+    };
+    const pw = $("#ml-pass").value;
+    if (pw) body.password = pw;
+    await API.put("/api/admin/mail", body);
+    state.view = "settings";
+    renderMain();
+  };
+  $("#ml-test").onclick = async () => {
+    const b = $("#ml-test"); b.disabled = true;
+    try {
+      const r = await API.post("/api/admin/mail/test", {});
+      alert(r.ok ? `${t("admin.mail_test_ok")} ${r.to}` : `${t("common.error")}: ${r.error}`);
+    } catch (e) { alert(e.message); }
+    b.disabled = false;
+  };
 }
 
 // ---------- Admin: sidebar tab visibility (feature toggles) ----------

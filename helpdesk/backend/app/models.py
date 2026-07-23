@@ -145,6 +145,7 @@ class Task(Base):
     assignee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     due_date = Column(DateTime, nullable=True)
+    due_reminded_at = Column(DateTime, nullable=True)  # set once the due-soon email went out
     archived = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -10,7 +10,8 @@ from .config import settings
 from .database import Base, engine, SessionLocal
 from .seed import seed_admin
 from .backup import start_scheduler
-from .routers import auth, departments, tasks, comments, admin, notifications, tags, backups, positions, users, activity, chat, settings as settings_router
+from .notifier import start_notifier
+from .routers import auth, departments, tasks, comments, admin, notifications, tags, backups, positions, users, activity, chat, mail, settings as settings_router
 
 app = FastAPI(title="HelpDesk", version="1.0.0")
 
@@ -34,6 +35,7 @@ app.include_router(positions.router)
 app.include_router(users.router)
 app.include_router(activity.router)
 app.include_router(chat.router)
+app.include_router(mail.router)
 app.include_router(settings_router.router)
 
 
@@ -57,6 +59,8 @@ def on_startup():
 
     # Background thread that writes automatic backups on the configured schedule.
     start_scheduler()
+    # Background thread that emails due-soon reminders.
+    start_notifier()
 
 
 def ensure_schema():
@@ -95,6 +99,11 @@ def ensure_schema():
     if "avatar_name" not in ucols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN avatar_name VARCHAR(500)"))
+
+    tcols = {c["name"] for c in insp.get_columns("tasks")}
+    if "due_reminded_at" not in tcols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN due_reminded_at DATETIME"))
 
 
 @app.get("/api/health")

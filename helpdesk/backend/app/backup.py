@@ -152,7 +152,8 @@ def build_export(db, include_files: bool = True) -> dict:
             "id": t.id, "key": t.key, "department_id": t.department_id, "title": t.title,
             "description": t.description, "status": t.status, "priority": t.priority,
             "type": t.type, "author_id": t.author_id, "assignee_id": t.assignee_id,
-            "due_date": _dt(t.due_date), "archived": t.archived,
+            "due_date": _dt(t.due_date), "due_reminded_at": _dt(t.due_reminded_at),
+            "archived": t.archived,
             "created_at": _dt(t.created_at), "updated_at": _dt(t.updated_at),
             "tag_ids": [tg.id for tg in t.tags],
         } for t in tasks],
@@ -261,7 +262,8 @@ def restore_import(db, data: dict) -> dict:
             description=t.get("description", ""), status=t.get("status", "open"),
             priority=t.get("priority", "normal"), type=t.get("type", "task"),
             author_id=t.get("author_id"), assignee_id=t.get("assignee_id"),
-            due_date=_pdt(t.get("due_date")), archived=t.get("archived", False),
+            due_date=_pdt(t.get("due_date")), due_reminded_at=_pdt(t.get("due_reminded_at")),
+            archived=t.get("archived", False),
             created_at=_pdt(t.get("created_at")), updated_at=_pdt(t.get("updated_at")),
         ))
     db.flush()
