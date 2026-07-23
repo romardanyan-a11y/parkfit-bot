@@ -102,7 +102,11 @@
     "language": "Language",
     "pending_message": "Your request has been sent. Please wait for administrator approval.",
     "invalid": "Incorrect email or password",
-    "pending_login": "Account not yet approved by an administrator"
+    "pending_login": "Account not yet approved by an administrator",
+    "code_label": "Code from the email",
+    "code_sent": "We sent a 4-digit code to your email — enter it and press \"Submit request\" again",
+    "code_invalid": "Wrong code — check the email",
+    "resend_code": "Send the code again"
   },
   "catalog": {
     "title": "Departments catalog",
@@ -159,7 +163,8 @@
     "filter_tag": "Tag",
     "filter_priority": "Priority",
     "filter_type": "Type",
-    "reset_filters": "Reset"
+    "reset_filters": "Reset",
+    "coassignees": "Co-assignees"
   },
   "status": {
     "open": "Open",
@@ -194,7 +199,8 @@
     "comment_deleted": "deleted a comment",
     "attachment": "attached a file",
     "attachment_deleted": "deleted a file",
-    "tags": "changed tags"
+    "tags": "changed tags",
+    "coassignees": "changed co-assignees"
   },
   "admin": {
     "users_title": "Users",
@@ -280,7 +286,26 @@
     "backup_download": "Download",
     "backup_last": "Last backup",
     "backup_never": "not created yet",
-    "backup_none": "No backups yet"
+    "backup_none": "No backups yet",
+    "mail_tpl_title": "Email templates",
+    "mail_tpl_hint": "An empty field uses the default text (shown in grey). Placeholders in curly braces are substituted automatically.",
+    "mail_tpl_vars": "Placeholders:",
+    "mail_subject": "Subject",
+    "mail_body": "Body",
+    "mail_tpl_save": "Save templates",
+    "tpl_new_task": "New task",
+    "tpl_assigned": "Assignee set",
+    "tpl_due": "Due soon",
+    "tpl_code": "Email verification code",
+    "tpl_registration_request": "Registration request (to admins)",
+    "tpl_approved": "Account approved",
+    "tpl_rejected": "Request declined",
+    "tpl_comment": "New comment",
+    "broadcast_title": "Mail to users",
+    "broadcast_hint": "The letter is sent to everyone selected from the address configured above.",
+    "broadcast_all": "Send to everyone",
+    "broadcast_send": "Send",
+    "broadcast_sent": "Emails sent:"
   },
   "notifications": {
     "title": "Notifications",

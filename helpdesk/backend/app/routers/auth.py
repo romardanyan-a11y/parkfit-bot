@@ -1,14 +1,21 @@
+import random
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import User, Notification, USER_APPROVED, USER_PENDING, ROLE_ADMIN, ROLE_AGENT
-from ..schemas import RegisterIn, TokenOut, UserOut, LanguageIn, ChangePasswordIn
+from ..mailcfg import get_mail_config
+from ..models import User, Notification, EmailCode, USER_APPROVED, USER_PENDING, ROLE_ADMIN, ROLE_AGENT
+from ..schemas import RegisterIn, RegisterCodeIn, TokenOut, UserOut, LanguageIn, ChangePasswordIn
 from ..security import hash_password, verify_password, create_access_token
-from ..mailer import send_email_many
+from ..mailer import send_email, send_email_many, mail_text
 from .positions import position_to_out as _position_out
+
+CODE_TTL_MIN = 15
+CODE_MAX_ATTEMPTS = 5
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -31,11 +38,60 @@ def user_to_out(user: User) -> dict:
     }
 
 
+@router.post("/register/code")
+def request_register_code(data: RegisterCodeIn, db: Session = Depends(get_db)):
+    """Step 1 of registration: send a 4-digit code to prove the email is real.
+    When SMTP is not configured the code step is skipped entirely."""
+    cfg = get_mail_config(db)
+    if not cfg["enabled"]:
+        return {"required": False}
+    if db.query(User).filter(User.email == data.email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Light rate limit: one code per minute per address.
+    recent = db.query(EmailCode).filter(
+        EmailCode.email == data.email,
+        EmailCode.created_at > datetime.utcnow() - timedelta(seconds=60),
+    ).first()
+    if recent:
+        raise HTTPException(status_code=429, detail="Code already sent, wait a minute")
+
+    db.query(EmailCode).filter(EmailCode.email == data.email).delete()
+    code = f"{random.randint(0, 9999):04d}"
+    db.add(EmailCode(email=data.email, code=code))
+    db.commit()
+
+    subject, body = mail_text("code", data.preferred_language, _db=db, code=code)
+    send_email(data.email, subject, body)
+    return {"required": True}
+
+
+def _verify_register_code(db: Session, email: str, code: str | None):
+    row = (db.query(EmailCode).filter(EmailCode.email == email)
+           .order_by(EmailCode.id.desc()).first())
+    if not row or row.created_at < datetime.utcnow() - timedelta(minutes=CODE_TTL_MIN):
+        raise HTTPException(status_code=400, detail="code_required")
+    if row.attempts >= CODE_MAX_ATTEMPTS:
+        db.delete(row)
+        db.commit()
+        raise HTTPException(status_code=400, detail="code_required")
+    if not code or code.strip() != row.code:
+        row.attempts += 1
+        db.commit()
+        raise HTTPException(status_code=400, detail="invalid_code")
+    db.query(EmailCode).filter(EmailCode.email == email).delete()
+
+
 @router.post("/register", response_model=UserOut)
 def register(data: RegisterIn, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    # With mail enabled the email must be confirmed by the 4-digit code.
+    cfg = get_mail_config(db)
+    if cfg["enabled"]:
+        _verify_register_code(db, data.email, data.code)
 
     user = User(
         email=data.email,
@@ -62,12 +118,13 @@ def register(data: RegisterIn, db: Session = Depends(get_db)):
         ))
     db.commit()
 
-    send_email_many(
-        [a.email for a in admins],
-        "[HelpDesk] New registration request",
-        f"{user.full_name or user.email} ({user.email}) requested access.\n\n"
-        f"Message: {user.description or '-'}\n\nApprove or reject in the Administration section.",
-    )
+    for a in admins:
+        subject, body = mail_text(
+            "registration_request", a.preferred_language, _db=db,
+            name=user.full_name or user.email, email=user.email,
+            message=user.description or "-", url=cfg["base_url"],
+        )
+        send_email(a.email, subject, body)
     return user_to_out(user)
 
 

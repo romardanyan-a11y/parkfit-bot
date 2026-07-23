@@ -49,6 +49,14 @@ task_tags = Table(
     Column("tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# Association: co-assignees (соисполнители) of a task, any number of users.
+task_coassignees = Table(
+    "task_coassignees",
+    Base.metadata,
+    Column("task_id", Integer, ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class User(Base):
     __tablename__ = "users"
@@ -154,6 +162,7 @@ class Task(Base):
     department = relationship("Department", back_populates="tasks")
     author = relationship("User", foreign_keys=[author_id])
     assignee = relationship("User", foreign_keys=[assignee_id])
+    coassignees = relationship("User", secondary=task_coassignees)
     comments = relationship("Comment", back_populates="task", cascade="all, delete-orphan")
     attachments = relationship("Attachment", back_populates="task", cascade="all, delete-orphan")
     history = relationship("TaskEvent", back_populates="task", cascade="all, delete-orphan")
@@ -354,6 +363,18 @@ class ConversationTask(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     task = relationship("Task")
+
+
+class EmailCode(Base):
+    """4-digit verification codes for confirming an email at registration."""
+
+    __tablename__ = "email_codes"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String(255), index=True)
+    code = Column(String(10))
+    attempts = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class AppSetting(Base):

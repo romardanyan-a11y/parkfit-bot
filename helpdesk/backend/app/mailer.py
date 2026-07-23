@@ -14,7 +14,9 @@ from email.utils import formataddr
 log = logging.getLogger("helpdesk.mailer")
 
 
-# Localized templates: kind -> lang -> (subject, body)
+# Localized default templates: kind -> lang -> (subject, body).
+# Admins can override any of them from the admin panel (stored in AppSetting
+# "mail_templates" as {kind: {lang: {subject, body}}}).
 MAIL_T = {
     "new_task": {
         "ru": ("[HelpDesk] Новая задача {key}: {title}",
@@ -40,12 +42,99 @@ MAIL_T = {
         "zh": ("[HelpDesk] 任务 {key} 即将到期",
                "任务 {key} — {title} — 截止时间：{due}。\n\n打开：{url}"),
     },
+    "code": {
+        "ru": ("[HelpDesk] Код подтверждения: {code}",
+               "Ваш код подтверждения регистрации: {code}\n\nВведите его на странице регистрации. Код действует 15 минут."),
+        "en": ("[HelpDesk] Verification code: {code}",
+               "Your registration verification code: {code}\n\nEnter it on the registration page. The code is valid for 15 minutes."),
+        "zh": ("[HelpDesk] 验证码：{code}",
+               "您的注册验证码：{code}\n\n请在注册页面输入。验证码 15 分钟内有效。"),
+    },
+    "registration_request": {
+        "ru": ("[HelpDesk] Новая заявка на регистрацию",
+               "{name} ({email}) просит доступ к системе.\n\nСообщение: {message}\n\nОдобрите или отклоните в разделе «Заявки на регистрацию»: {url}"),
+        "en": ("[HelpDesk] New registration request",
+               "{name} ({email}) requested access.\n\nMessage: {message}\n\nApprove or reject in the registration requests section: {url}"),
+        "zh": ("[HelpDesk] 新的注册申请",
+               "{name}（{email}）申请访问系统。\n\n留言：{message}\n\n请在“注册申请”中批准或拒绝：{url}"),
+    },
+    "approved": {
+        "ru": ("[HelpDesk] Ваш аккаунт подтверждён",
+               "Ваша заявка на доступ одобрена.\n\nВойти: {url}"),
+        "en": ("[HelpDesk] Your account has been approved",
+               "Your access request has been approved.\n\nSign in: {url}"),
+        "zh": ("[HelpDesk] 您的账号已获批准",
+               "您的访问申请已获批准。\n\n登录：{url}"),
+    },
+    "rejected": {
+        "ru": ("[HelpDesk] Заявка отклонена",
+               "К сожалению, ваша заявка на доступ отклонена."),
+        "en": ("[HelpDesk] Registration request declined",
+               "Unfortunately your access request has been declined."),
+        "zh": ("[HelpDesk] 注册申请被拒绝",
+               "很抱歉，您的访问申请已被拒绝。"),
+    },
+    "comment": {
+        "ru": ("[HelpDesk] Новый комментарий к {key}: {title}",
+               "{author} написал(а):\n\n{text}\n\nОткрыть сайт: {url}"),
+        "en": ("[HelpDesk] New comment on {key}: {title}",
+               "{author} wrote:\n\n{text}\n\nOpen: {url}"),
+        "zh": ("[HelpDesk] {key} 有新评论：{title}",
+               "{author} 写道：\n\n{text}\n\n打开：{url}"),
+    },
+}
+
+# Placeholders each kind supports (shown in the admin template editor).
+MAIL_VARS = {
+    "new_task": ["key", "title", "dep", "url"],
+    "assigned": ["key", "title", "url"],
+    "due": ["key", "title", "due", "url"],
+    "code": ["code"],
+    "registration_request": ["name", "email", "message", "url"],
+    "approved": ["url"],
+    "rejected": [],
+    "comment": ["key", "title", "author", "text", "url"],
 }
 
 
-def mail_text(kind: str, lang: str, **kw) -> tuple[str, str]:
-    pair = MAIL_T[kind].get(lang or "ru", MAIL_T[kind]["ru"])
-    return pair[0].format(**kw), pair[1].format(**kw)
+class _SafeDict(dict):
+    """Leave unknown {placeholders} intact instead of crashing on admin typos."""
+    def __missing__(self, key):
+        return "{" + key + "}"
+
+
+def get_template_overrides(db=None) -> dict:
+    import json
+    from .mailcfg import _get
+    from .database import SessionLocal
+    own = False
+    if db is None:
+        db = SessionLocal()
+        own = True
+    try:
+        raw = _get(db, "mail_templates", "")
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    finally:
+        if own:
+            db.close()
+
+
+def mail_text(kind: str, lang: str, _db=None, **kw) -> tuple[str, str]:
+    lang = lang if lang in ("ru", "en", "zh") else "ru"
+    subject, body = MAIL_T[kind].get(lang, MAIL_T[kind]["ru"])
+    ov = get_template_overrides(_db).get(kind, {}).get(lang) or {}
+    if (ov.get("subject") or "").strip():
+        subject = ov["subject"]
+    if (ov.get("body") or "").strip():
+        body = ov["body"]
+    safe = _SafeDict(**kw)
+    return subject.format_map(safe), body.format_map(safe)
 
 
 def _send_via(cfg: dict, to_addr: str, subject: str, body: str):

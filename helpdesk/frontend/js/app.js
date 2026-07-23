@@ -404,6 +404,30 @@ function wireLogin() {
 
 function wireRegister() {
   $("#to-login").onclick = () => { state.authMode = "login"; renderAuth(); };
+
+  const requestCode = async () => {
+    await API.post("/api/auth/register/code", {
+      email: $("#r-email").value.trim(),
+      preferred_language: I18N.lang,
+    });
+  };
+  // Shown once the server demands email verification (SMTP configured).
+  const showCodeField = () => {
+    if ($("#r-code")) return;
+    $("#r-submit").insertAdjacentHTML("beforebegin", `
+      <div class="field"><label>${t("login.code_label")}</label>
+        <input id="r-code" inputmode="numeric" maxlength="4"
+               style="letter-spacing:8px;text-align:center;font-size:22px;font-weight:700" />
+        <div style="text-align:right;margin-top:4px">
+          <button class="link-btn" id="r-resend" type="button">${t("login.resend_code")}</button>
+        </div>
+      </div>`);
+    $("#r-resend").onclick = async () => {
+      try { await requestCode(); authMsg(t("login.code_sent"), "info"); }
+      catch (e) { authMsg(e.message || t("common.error"), "error"); }
+    };
+  };
+
   $("#r-submit").onclick = async () => {
     try {
       await API.post("/api/auth/register", {
@@ -412,12 +436,25 @@ function wireRegister() {
         password: $("#r-pass").value,
         description: $("#r-desc").value.trim(),
         preferred_language: I18N.lang,
+        code: $("#r-code") ? $("#r-code").value.trim() : null,
       });
       state.authMode = "login";
       renderAuth();
       authMsg(t("login.pending_message"), "info");
     } catch (e) {
-      authMsg(e.message || t("common.error"), "error");
+      if (e.message === "code_required") {
+        // Email must be verified first: send the 4-digit code and reveal the field.
+        try {
+          await requestCode();
+          showCodeField();
+          authMsg(t("login.code_sent"), "info");
+        } catch (e2) { authMsg(e2.message || t("common.error"), "error"); }
+      } else if (e.message === "invalid_code") {
+        showCodeField();
+        authMsg(t("login.code_invalid"), "error");
+      } else {
+        authMsg(e.message || t("common.error"), "error");
+      }
     }
   };
 }
@@ -722,6 +759,15 @@ async function openTaskModal(dep, allTags) {
           ${assignees.map((a) => `<option value="${a.id}">${esc(userOptionText(a))}</option>`).join("")}</select></div>
       <div class="field"><label>${t("tasks.due_date")}</label><input id="t-due" type="date" /></div>
     </div>
+    <div class="field"><label>${t("tasks.coassignees")}</label>
+      <div class="chip-list" style="max-height:140px">
+        ${assignees.map((a) => `
+          <div class="chip-check">
+            <input type="checkbox" id="tco-${a.id}" data-tco="${a.id}" />
+            <label for="tco-${a.id}">${esc(userOptionText(a))}</label>
+          </div>`).join("") || `<span class="muted">—</span>`}
+      </div>
+    </div>
     <div class="field"><label>${t("tasks.tags")}</label>
       <div class="tag-row" id="t-tags">
         ${allTags.length ? allTags.map((tg) => `
@@ -747,6 +793,7 @@ async function openTaskModal(dep, allTags) {
       assignee_id: $("#t-assignee").value ? parseInt($("#t-assignee").value) : null,
       due_date: due ? new Date(due).toISOString() : null,
       tag_ids: tagIds,
+      coassignee_ids: [...document.querySelectorAll("[data-tco]:checked")].map((x) => parseInt(x.dataset.tco)),
     });
     const files = [...$("#t-files").files];
     for (const f of files) await API.upload(`/api/tasks/${created.id}/attachments`, f);
@@ -904,6 +951,17 @@ async function viewTaskDetail(main) {
             ${assignees.map((a) => `<option value="${a.id}" ${task.assignee && task.assignee.id === a.id ? "selected" : ""}>${esc(userOptionText(a))}</option>`).join("")}</select>
         </div>
         <div class="side-block">
+          <h4>${t("tasks.coassignees")}</h4>
+          <div class="chip-list">
+            ${assignees.map((a) => `
+              <div class="chip-check">
+                <input type="checkbox" id="co-${a.id}" data-coas="${a.id}"
+                       ${(task.coassignees || []).some((x) => x.id === a.id) ? "checked" : ""} />
+                <label for="co-${a.id}">${esc(userOptionText(a))}</label>
+              </div>`).join("") || `<span class="muted">—</span>`}
+          </div>
+        </div>
+        <div class="side-block">
           <h4>${t("tasks.due_date")}</h4>
           <input type="date" id="s-due" value="${task.due_date ? new Date(task.due_date).toISOString().slice(0, 10) : ""}" />
         </div>
@@ -950,6 +1008,11 @@ async function viewTaskDetail(main) {
   $("#s-prio").onchange = (e) => patch({ priority: e.target.value });
   $("#s-type").onchange = (e) => patch({ type: e.target.value });
   $("#s-assignee").onchange = (e) => patch({ assignee_id: e.target.value ? parseInt(e.target.value) : 0 });
+  document.querySelectorAll("[data-coas]").forEach((cb) =>
+    cb.addEventListener("change", () => {
+      const ids = [...document.querySelectorAll("[data-coas]:checked")].map((x) => parseInt(x.dataset.coas));
+      patch({ coassignee_ids: ids });
+    }));
   $("#s-due").onchange = (e) => patch({ due_date: e.target.value ? new Date(e.target.value).toISOString() : null });
 
   $("#c-send").onclick = async () => {
@@ -2053,7 +2116,114 @@ async function viewSettings(main) {
 
   await renderBackupSection(main);
   await renderMailSection(main);
+  await renderTemplatesSection(main);
+  await renderBroadcastSection(main);
   await renderNavSection(main);
+}
+
+// ---------- Admin: editable email templates ----------
+async function renderTemplatesSection(main) {
+  const tpl = await API.get("/api/admin/mail/templates");
+  state._tpl = tpl;
+  const kinds = tpl.kinds;
+
+  main.insertAdjacentHTML("beforeend", `
+    <div class="section" style="max-width:760px;margin-top:20px">
+      <h2 style="margin:0 0 6px;font-size:18px">${t("admin.mail_tpl_title")}</h2>
+      <div class="muted" style="font-size:13px;margin-bottom:12px">${t("admin.mail_tpl_hint")}</div>
+      <div class="field">
+        <select id="tpl-kind">
+          ${kinds.map((k) => `<option value="${k}">${t("admin.tpl_" + k)}</option>`).join("")}
+        </select>
+      </div>
+      <div id="tpl-editor"></div>
+      <button class="btn" id="tpl-save" style="margin-top:10px">${t("admin.mail_tpl_save")}</button>
+    </div>`);
+
+  const LANG_NAMES = { ru: "Русский", en: "English", zh: "中文" };
+  let currentKind = kinds[0];
+
+  const renderEditor = (kind) => {
+    const d = tpl.defaults[kind];
+    const ov = tpl.overrides[kind] || {};
+    const vars = (tpl.vars[kind] || []).map((v) => "{" + v + "}").join("  ");
+    $("#tpl-editor").innerHTML = `
+      ${vars ? `<div class="muted" style="font-size:12px;margin-bottom:10px">${t("admin.mail_tpl_vars")} <span class="mono">${esc(vars)}</span></div>` : ""}
+      ${["ru", "en", "zh"].map((lang) => `
+        <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
+          <b style="font-size:13px">${LANG_NAMES[lang]}</b>
+          <div class="field" style="margin-top:8px"><label>${t("admin.mail_subject")}</label>
+            <input id="tpl-${lang}-s" placeholder="${esc(d[lang].subject)}" value="${esc((ov[lang] || {}).subject || "")}" /></div>
+          <div class="field" style="margin-bottom:0"><label>${t("admin.mail_body")}</label>
+            <textarea id="tpl-${lang}-b" placeholder="${esc(d[lang].body)}" style="min-height:70px">${esc((ov[lang] || {}).body || "")}</textarea></div>
+        </div>`).join("")}`;
+  };
+
+  const collect = (kind) => {
+    const entry = {};
+    ["ru", "en", "zh"].forEach((lang) => {
+      const s = $(`#tpl-${lang}-s`).value.trim();
+      const b = $(`#tpl-${lang}-b`).value.trim();
+      if (s || b) entry[lang] = { subject: s, body: b };
+    });
+    if (Object.keys(entry).length) tpl.overrides[kind] = entry;
+    else delete tpl.overrides[kind];
+  };
+
+  renderEditor(currentKind);
+  $("#tpl-kind").onchange = (e) => {
+    collect(currentKind);
+    currentKind = e.target.value;
+    renderEditor(currentKind);
+  };
+  $("#tpl-save").onclick = async () => {
+    collect(currentKind);
+    await API.put("/api/admin/mail/templates", { overrides: tpl.overrides });
+    const btn = $("#tpl-save");
+    btn.textContent = "✓ " + t("admin.mail_tpl_save");
+    setTimeout(() => { btn.textContent = t("admin.mail_tpl_save"); }, 1500);
+  };
+}
+
+// ---------- Admin: broadcast email to all / selected users ----------
+async function renderBroadcastSection(main) {
+  const users = await API.get("/api/admin/users?status=approved");
+
+  main.insertAdjacentHTML("beforeend", `
+    <div class="section" style="max-width:760px;margin-top:20px">
+      <h2 style="margin:0 0 6px;font-size:18px">✉ ${t("admin.broadcast_title")}</h2>
+      <div class="muted" style="font-size:13px;margin-bottom:12px">${t("admin.broadcast_hint")}</div>
+      <div class="field"><label>${t("admin.mail_subject")}</label><input id="bc-subj" /></div>
+      <div class="field"><label>${t("admin.mail_body")}</label><textarea id="bc-body" style="min-height:90px"></textarea></div>
+      <div class="nav-toggle-row" style="border-bottom:none">
+        <span>${t("admin.broadcast_all")}</span>
+        <label class="switch"><input type="checkbox" id="bc-all" checked /><span class="sl"></span></label>
+      </div>
+      <div class="chip-list" id="bc-users" style="display:none">
+        ${users.map((u) => `
+          <div class="chip-check">
+            <input type="checkbox" id="bc-u-${u.id}" data-bcu="${u.id}" />
+            <label for="bc-u-${u.id}">${esc(u.full_name || u.email)} <span class="muted">(${esc(u.email)})</span></label>
+          </div>`).join("") || `<span class="muted">${t("admin.no_users")}</span>`}
+      </div>
+      <button class="btn" id="bc-send" style="margin-top:12px">${t("admin.broadcast_send")}</button>
+    </div>`);
+
+  $("#bc-all").onchange = (e) => { $("#bc-users").style.display = e.target.checked ? "none" : ""; };
+  $("#bc-send").onclick = async () => {
+    const subject = $("#bc-subj").value.trim();
+    const body = $("#bc-body").value.trim();
+    if (!subject || !body) return alert(t("common.error"));
+    const all = $("#bc-all").checked;
+    const ids = [...document.querySelectorAll("[data-bcu]:checked")].map((x) => parseInt(x.dataset.bcu));
+    const btn = $("#bc-send"); btn.disabled = true;
+    try {
+      const r = await API.post("/api/admin/mail/broadcast", { subject, body, all, user_ids: ids });
+      alert(`${t("admin.broadcast_sent")} ${r.sent}`);
+      $("#bc-subj").value = ""; $("#bc-body").value = "";
+    } catch (e) { alert(e.message); }
+    btn.disabled = false;
+  };
 }
 
 // ---------- Admin: mail service (SMTP + notification toggles) ----------

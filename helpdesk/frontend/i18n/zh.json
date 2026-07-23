@@ -102,7 +102,11 @@
     "language": "语言",
     "pending_message": "您的申请已提交，请等待管理员审核。",
     "invalid": "邮箱或密码错误",
-    "pending_login": "账号尚未获得管理员批准"
+    "pending_login": "账号尚未获得管理员批准",
+    "code_label": "邮件中的验证码",
+    "code_sent": "我们已将 4 位验证码发送到您的邮箱 — 输入后再次点击“提交申请”",
+    "code_invalid": "验证码错误 — 请检查邮件",
+    "resend_code": "重新发送验证码"
   },
   "catalog": {
     "title": "部门目录",
@@ -159,7 +163,8 @@
     "filter_tag": "标签",
     "filter_priority": "优先级",
     "filter_type": "类型",
-    "reset_filters": "重置"
+    "reset_filters": "重置",
+    "coassignees": "协助人"
   },
   "status": {
     "open": "待处理",
@@ -194,7 +199,8 @@
     "comment_deleted": "删除了评论",
     "attachment": "上传了文件",
     "attachment_deleted": "删除了文件",
-    "tags": "更改了标签"
+    "tags": "更改了标签",
+    "coassignees": "更改了协助人"
   },
   "admin": {
     "users_title": "用户",
@@ -280,7 +286,26 @@
     "backup_download": "下载",
     "backup_last": "上次备份",
     "backup_never": "尚未创建",
-    "backup_none": "暂无备份"
+    "backup_none": "暂无备份",
+    "mail_tpl_title": "邮件模板",
+    "mail_tpl_hint": "留空则使用默认文本（灰色显示）。花括号中的变量会自动替换。",
+    "mail_tpl_vars": "变量：",
+    "mail_subject": "主题",
+    "mail_body": "正文",
+    "mail_tpl_save": "保存模板",
+    "tpl_new_task": "新任务",
+    "tpl_assigned": "指派负责人",
+    "tpl_due": "即将到期",
+    "tpl_code": "邮箱验证码",
+    "tpl_registration_request": "注册申请（发给管理员）",
+    "tpl_approved": "账号已批准",
+    "tpl_rejected": "申请被拒绝",
+    "tpl_comment": "新评论",
+    "broadcast_title": "群发邮件",
+    "broadcast_hint": "邮件将从上方配置的地址发送给所选用户。",
+    "broadcast_all": "发送给所有人",
+    "broadcast_send": "发送",
+    "broadcast_sent": "已发送邮件数："
   },
   "notifications": {
     "title": "通知",

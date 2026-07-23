@@ -156,6 +156,7 @@ def build_export(db, include_files: bool = True) -> dict:
             "archived": t.archived,
             "created_at": _dt(t.created_at), "updated_at": _dt(t.updated_at),
             "tag_ids": [tg.id for tg in t.tags],
+            "coassignee_ids": [u.id for u in t.coassignees],
         } for t in tasks],
         "comments": [{
             "id": c.id, "task_id": c.task_id, "author_id": c.author_id,
@@ -208,6 +209,8 @@ def restore_import(db, data: dict) -> dict:
     db.query(models.ConversationMember).delete()
     db.query(models.Conversation).delete()
     db.execute(models.task_tags.delete())
+    db.execute(models.task_coassignees.delete())
+    db.query(models.EmailCode).delete()
     db.execute(models.user_department_access.delete())
     db.query(models.Task).delete()
     db.query(models.Tag).delete()
@@ -268,10 +271,12 @@ def restore_import(db, data: dict) -> dict:
         ))
     db.flush()
 
-    # Task <-> tag links
+    # Task <-> tag links and co-assignees
     for t in data.get("tasks", []):
         for tag_id in t.get("tag_ids", []):
             db.execute(models.task_tags.insert().values(task_id=t["id"], tag_id=tag_id))
+        for uid in t.get("coassignee_ids", []):
+            db.execute(models.task_coassignees.insert().values(task_id=t["id"], user_id=uid))
 
     # Comments
     for c in data.get("comments", []):

@@ -122,11 +122,16 @@ def add_comment(task_id: int, data: CommentIn, user: User = Depends(get_current_
     db.refresh(comment)
 
     if body:
-        send_email_many(
-            [u.email for u in recipients],
-            f"[HelpDesk] New comment on {task.key}: {task.title}",
-            f"{user.full_name or user.email} commented:\n\n{body}",
-        )
+        from ..mailcfg import get_mail_config
+        from ..mailer import mail_text, send_email
+        cfg = get_mail_config(db)
+        if cfg["enabled"]:
+            for u in recipients:
+                subject, mbody = mail_text("comment", u.preferred_language, _db=db,
+                                           key=task.key, title=task.title,
+                                           author=user.full_name or user.email,
+                                           text=body, url=cfg["base_url"])
+                send_email(u.email, subject, mbody)
     return comment
 
 

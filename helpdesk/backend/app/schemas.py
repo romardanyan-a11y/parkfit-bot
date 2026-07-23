@@ -11,6 +11,12 @@ class RegisterIn(BaseModel):
     full_name: Optional[str] = ""
     description: Optional[str] = ""
     preferred_language: Optional[str] = "ru"
+    code: Optional[str] = None  # email-verification code (when mail is enabled)
+
+
+class RegisterCodeIn(BaseModel):
+    email: EmailStr
+    preferred_language: Optional[str] = "ru"
 
 
 class LoginIn(BaseModel):
@@ -174,6 +180,7 @@ class TaskIn(BaseModel):
     assignee_id: Optional[int] = None
     due_date: Optional[datetime] = None
     tag_ids: Optional[List[int]] = None
+    coassignee_ids: Optional[List[int]] = None
 
 
 class TaskUpdateIn(BaseModel):
@@ -185,6 +192,7 @@ class TaskUpdateIn(BaseModel):
     assignee_id: Optional[int] = None
     due_date: Optional[datetime] = None
     tag_ids: Optional[List[int]] = None
+    coassignee_ids: Optional[List[int]] = None
 
 
 class UserMini(BaseModel):
@@ -249,6 +257,7 @@ class TaskOut(BaseModel):
     type: str
     author: Optional[UserMini]
     assignee: Optional[UserMini]
+    coassignees: List[UserMini] = []
     due_date: Optional[datetime]
     archived: bool
     created_at: datetime

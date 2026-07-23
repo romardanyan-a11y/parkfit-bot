@@ -20,7 +20,8 @@ import string
 
 from ..schemas import UserOut, ApproveIn, AccessIn, UserMini, ResetPasswordIn, PositionAssignIn
 from ..models import Position
-from ..mailer import send_email
+from ..mailer import send_email, mail_text
+from ..mailcfg import get_mail_config
 from ..security import hash_password
 from ..config import settings
 from .auth import user_to_out
@@ -55,11 +56,9 @@ def approve_user(user_id: int, data: ApproveIn, admin: User = Depends(get_curren
         user.departments = deps
     db.commit()
     db.refresh(user)
-    send_email(
-        user.email,
-        "[HelpDesk] Your account has been approved",
-        f"Your access request has been approved.\n\nSign in: {settings.APP_BASE_URL}/",
-    )
+    subject, body = mail_text("approved", user.preferred_language, _db=db,
+                              url=get_mail_config(db)["base_url"])
+    send_email(user.email, subject, body)
     return user_to_out(user)
 
 
@@ -71,11 +70,8 @@ def reject_user(user_id: int, admin: User = Depends(get_current_admin), db: Sess
     user.status = USER_REJECTED
     db.commit()
     db.refresh(user)
-    send_email(
-        user.email,
-        "[HelpDesk] Registration request declined",
-        "Unfortunately your access request has been declined.",
-    )
+    subject, body = mail_text("rejected", user.preferred_language, _db=db)
+    send_email(user.email, subject, body)
     return user_to_out(user)
 
 

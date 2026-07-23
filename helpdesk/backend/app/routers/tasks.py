@@ -41,6 +41,31 @@ def apply_tags(db: Session, task: Task, tag_ids):
     task.tags = db.query(Tag).filter(Tag.id.in_(tag_ids)).all() if tag_ids else []
 
 
+def apply_coassignees(db: Session, task: Task, ids, actor: User):
+    """Set the task's co-assignees; notify people who were just added."""
+    if ids is None:
+        return
+    before = {u.id for u in task.coassignees}
+    users = db.query(User).filter(User.id.in_(ids)).all() if ids else []
+    task.coassignees = users
+    added = [u for u in users if u.id not in before and u.id != actor.id]
+    cfg = get_mail_config(db)
+    for u in added:
+        db.add(Notification(
+            recipient_id=u.id,
+            kind="task_assigned",
+            title="Task assigned to you",
+            body=f"{task.key}: {task.title}",
+            payload=str(task.id),
+        ))
+        if cfg["enabled"] and cfg["notify_assigned"]:
+            subject, body = mail_text("assigned", u.preferred_language, _db=db,
+                                      key=task.key, title=task.title, url=cfg["base_url"])
+            send_email(u.email, subject, body)
+    if {u.id for u in users} != before:
+        log_event(db, task, actor, "coassignees", "")
+
+
 def notify_assignee(db: Session, task: Task, assignee_id: int, actor: User):
     """In-app notification + email when a task is assigned to someone else."""
     if not assignee_id or assignee_id == actor.id:
@@ -153,6 +178,7 @@ def create_task(dep_id: int, data: TaskIn, user: User = Depends(get_current_user
     db.add(task)
     db.flush()
     apply_tags(db, task, data.tag_ids)
+    apply_coassignees(db, task, data.coassignee_ids, user)
     log_event(db, task, user, "created", "")
     if data.assignee_id:
         log_event(db, task, user, "assignee", f"->{data.assignee_id}")
@@ -217,6 +243,9 @@ def update_task(task_id: int, data: TaskUpdateIn, user: User = Depends(get_curre
     if data.tag_ids is not None:
         apply_tags(db, task, data.tag_ids)
         log_event(db, task, user, "tags", "")
+
+    if data.coassignee_ids is not None:
+        apply_coassignees(db, task, data.coassignee_ids, user)
 
     db.commit()
     db.refresh(task)
