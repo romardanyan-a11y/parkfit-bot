@@ -14,7 +14,45 @@ const state = {
   chatUnread: 0,
   currentConvId: null,
   navTabs: { catalog: true, archive: true, chat: true, directory: true },
+  translator: localStorage.getItem("translator") === "1",
 };
+
+// ---------------------------------------------------------------------------
+// Smart translator: any element marked data-tr gets its text translated into
+// the current interface language via the server (which caches every phrase).
+// The original text is kept in dataset.orig and shown as a tooltip.
+// ---------------------------------------------------------------------------
+async function translateNodes(root) {
+  if (!state.translator || !state.me) return;
+  const nodes = [...(root || document).querySelectorAll("[data-tr]")]
+    .filter((n) => n.dataset.trlang !== I18N.lang);
+  if (!nodes.length) return;
+  nodes.forEach((n) => { if (!("orig" in n.dataset)) n.dataset.orig = n.textContent; });
+
+  for (let off = 0; off < nodes.length; off += 50) {
+    const chunk = nodes.slice(off, off + 50);
+    try {
+      const r = await API.post("/api/translate", {
+        target: I18N.lang,
+        items: chunk.map((n, i) => ({ id: String(i), text: n.dataset.orig })),
+      });
+      chunk.forEach((n, i) => {
+        const tr = r.translations[String(i)];
+        if (tr && tr !== n.dataset.orig) {
+          n.textContent = tr;
+          n.title = n.dataset.orig;   // hover shows the original
+        }
+        n.dataset.trlang = I18N.lang;
+      });
+    } catch (e) { break; }
+  }
+}
+
+function toggleTranslator() {
+  state.translator = !state.translator;
+  localStorage.setItem("translator", state.translator ? "1" : "0");
+  renderShell();  // re-render: translated on, originals when off
+}
 
 const STATUSES = ["open", "in_progress", "need_info", "resolved", "closed"];
 const PRIORITIES = ["trivial", "minor", "normal", "major", "critical", "blocker"];
@@ -504,6 +542,10 @@ function renderShell() {
             </a>`).join("")}
         </nav>
         <div class="sidebar-footer">
+          <a class="nav-item" data-translator title="${t("nav.translator_hint")}">
+            <span class="label">🌐 ${t("nav.translator")}</span>
+            <span class="tr-state ${state.translator ? "on" : ""}">${state.translator ? t("nav.tr_on") : t("nav.tr_off")}</span>
+          </a>
           ${langSwitcher("sidebar-lang")}
           <a class="nav-item" data-logout><span class="label">${t("nav.logout")}</span></a>
           <div style="padding:8px 12px;font-size:12px;opacity:0.7">${esc(state.me.email)}</div>
@@ -526,6 +568,7 @@ function renderShell() {
   document.querySelectorAll("[data-view]").forEach((el) =>
     el.addEventListener("click", () => { closeDrawer(); state.view = el.dataset.view; state.currentDept = null; state.currentTask = null; renderMain(); }));
   $("[data-logout]").addEventListener("click", logout);
+  $("[data-translator]").addEventListener("click", toggleTranslator);
   wireLangSwitcher();
   renderMain();
 }
@@ -554,18 +597,19 @@ async function renderMain() {
   main.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
 
   try {
-    if (state.currentTask) return await viewTaskDetail(main);
-    if (state.currentDept) return await viewDepartment(main);
-    switch (state.view) {
-      case "catalog": return await viewCatalog(main);
-      case "archive": return await viewArchive(main);
-      case "chat": return await viewChat(main);
-      case "directory": return await viewDirectory(main);
-      case "requests": return await viewRequests(main);
-      case "users": return await viewUsers(main);
-      case "settings": return await viewSettings(main);
-      default: return await viewCatalog(main);
+    if (state.currentTask) await viewTaskDetail(main);
+    else if (state.currentDept) await viewDepartment(main);
+    else switch (state.view) {
+      case "catalog": await viewCatalog(main); break;
+      case "archive": await viewArchive(main); break;
+      case "chat": await viewChat(main); break;
+      case "directory": await viewDirectory(main); break;
+      case "requests": await viewRequests(main); break;
+      case "users": await viewUsers(main); break;
+      case "settings": await viewSettings(main); break;
+      default: await viewCatalog(main);
     }
+    translateNodes();  // smart translator pass over the freshly rendered view
   } catch (e) {
     main.innerHTML = `<div class="msg error">${esc(e.message || t("common.error"))}</div>`;
   }
@@ -603,8 +647,8 @@ function depCard(d) {
   const isAdmin = state.me.role === "admin";
   return `
     <div class="card" id="dep-${d.id}">
-      <h3>${esc(d.name)}${actDot(state.activity.departments[d.id], "depdot-" + d.id)}</h3>
-      <div class="desc">${esc(d.description || "")}</div>
+      <h3><span data-tr>${esc(d.name)}</span>${actDot(state.activity.departments[d.id], "depdot-" + d.id)}</h3>
+      <div class="desc" data-tr>${esc(d.description || "")}</div>
       <div class="stats">
         <span>${t("catalog.open_tasks")}: <b>${d.open_tasks}</b></span>
         <span>${t("catalog.total_tasks")}: <b>${d.total_tasks}</b></span>
@@ -719,7 +763,7 @@ function taskTable(tasks) {
       <tbody>${tasks.map((task) => `
         <tr data-task="${task.id}">
           <td class="mono" data-label="${t("tasks.key")}">${esc(task.key)}${actDot(state.activity.tasks[task.id], "taskdot-" + task.id)}</td>
-          <td data-label="${t("tasks.task_title")}">${esc(task.title)}${tagChips(task.tags)}</td>
+          <td data-label="${t("tasks.task_title")}"><span data-tr>${esc(task.title)}</span>${tagChips(task.tags)}</td>
           <td data-label="${t("tasks.created")}">${fmtDate(task.created_at)}</td>
           <td data-label="${t("tasks.status")}"><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
           <td data-label="${t("tasks.priority")}"><span class="pr-${task.priority}">${t("priority." + task.priority)}</span></td>
@@ -879,7 +923,7 @@ async function viewTaskDetail(main) {
     <div class="topbar">
       <div>
         <a class="link-btn" id="back">← ${backLabel}</a>
-        <h2 style="margin-top:6px"><span class="mono">${esc(task.key)}</span> ${esc(task.title)}</h2>
+        <h2 style="margin-top:6px"><span class="mono">${esc(task.key)}</span> <span data-tr>${esc(task.title)}</span></h2>
       </div>
       <div style="display:flex;gap:8px">
         ${task.assignee && task.assignee.id === state.me.id ? "" : `<button class="btn" id="take">${t("tasks.take")}</button>`}
@@ -895,6 +939,8 @@ async function viewTaskDetail(main) {
           <input id="e-title" value="${esc(task.title)}" style="margin-bottom:12px" />
           <label>${t("tasks.task_desc")}</label>
           <textarea id="e-desc" style="min-height:120px">${esc(task.description || "")}</textarea>
+          ${state.translator && (task.description || "").trim()
+            ? `<div class="tr-preview">🌐 <span data-tr>${esc(task.description)}</span></div>` : ""}
           <div style="margin-top:12px"><button class="btn small" id="save-desc">${t("tasks.save_changes")}</button></div>
         </div>
 
@@ -1119,7 +1165,7 @@ function renderChecklist(items) {
   return items.map((it) => `
     <div class="checklist-item">
       <input type="checkbox" data-ci="${it.id}" ${it.is_done ? "checked" : ""} />
-      <span class="ci-text ${it.is_done ? "done" : ""}">${esc(it.text)}</span>
+      <span class="ci-text ${it.is_done ? "done" : ""}" data-tr>${esc(it.text)}</span>
       <button class="ci-del" data-cidel="${it.id}" title="${t("common.delete")}">✕</button>
     </div>`).join("");
 }
@@ -1148,7 +1194,7 @@ function renderComments(comments) {
             <button class="c-act c-act-del" data-cdel="${c.id}" title="${t("common.delete")}">✕</button>` : ""}
         </span>
       </div>
-      <div class="c-slot">${c.body ? `<div class="body">${esc(c.body)}</div>` : ""}</div>
+      <div class="c-slot">${c.body ? `<div class="body" data-tr>${esc(c.body)}</div>` : ""}</div>
       ${renderMedia(c.attachments)}
     </div>`;
   }).join("");
@@ -1270,8 +1316,8 @@ async function viewArchive(main) {
         <tbody>${all.map((task) => `
           <tr data-task="${task.id}">
             <td class="mono" data-label="${t("tasks.key")}">${esc(task.key)}</td>
-            <td data-label="${t("tasks.task_title")}">${esc(task.title)}</td>
-            <td data-label="${t("catalog.title")}">${esc(task._dep.name)}</td>
+            <td data-label="${t("tasks.task_title")}"><span data-tr>${esc(task.title)}</span></td>
+            <td data-label="${t("catalog.title")}"><span data-tr>${esc(task._dep.name)}</span></td>
             <td data-label="${t("tasks.status")}"><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
             <td data-label="${t("tasks.updated")}">${fmtDate(task.updated_at)}</td>
           </tr>`).join("")}</tbody>
@@ -1474,7 +1520,7 @@ async function viewChat(main) {
             ${convAvatar(c, 38)}
             <div class="conv-info">
               <div class="conv-name">${esc(convTitle(c))}</div>
-              <div class="conv-preview">${c.last_message ? esc((c.last_message.body || (c.last_message.has_files ? "📎" : ""))) : ""}</div>
+              <div class="conv-preview" data-tr>${c.last_message ? esc((c.last_message.body || (c.last_message.has_files ? "📎" : ""))) : ""}</div>
             </div>
             ${c.unread ? `<span class="unread-dot"></span>` : ""}
           </div>`).join("") : `<div class="empty-state" style="padding:20px">${t("chat.no_convs")}</div>`}
@@ -1538,6 +1584,7 @@ async function openConversation(convId) {
     </div>`;
   scrollChatDown();
   renderChatSide(conv);
+  translateNodes();
 
   const resetAttach = () => {
     $("#cm-files").value = "";
@@ -1623,7 +1670,7 @@ async function refreshMessages(convId, force) {
     if (!force && key === _lastMsgKey) return;
     _lastMsgKey = key;
     const box = $("#chat-msgs");
-    if (box) { box.innerHTML = renderChatMessages(msgs); scrollChatDown(); }
+    if (box) { box.innerHTML = renderChatMessages(msgs); scrollChatDown(); translateNodes(box); }
     fetchChatUnread();
   } catch (e) { /* transient */ }
 }
@@ -1638,7 +1685,7 @@ function renderChatMessages(msgs) {
           <span class="m-author">${esc(m.author ? displayName(m.author) : "—")}</span>
           <span class="m-time">${fmtDate(m.created_at)}</span>
         </div>
-        ${m.body ? `<div class="m-body">${esc(m.body)}</div>` : ""}
+        ${m.body ? `<div class="m-body" data-tr>${esc(m.body)}</div>` : ""}
         ${chatMedia(m.files)}
       </div>
     </div>`).join("");

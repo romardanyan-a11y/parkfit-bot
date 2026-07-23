@@ -11,7 +11,7 @@ from .database import Base, engine, SessionLocal
 from .seed import seed_admin
 from .backup import start_scheduler
 from .notifier import start_notifier
-from .routers import auth, departments, tasks, comments, admin, notifications, tags, backups, positions, users, activity, chat, mail, settings as settings_router
+from .routers import auth, departments, tasks, comments, admin, notifications, tags, backups, positions, users, activity, chat, mail, translate, settings as settings_router
 
 app = FastAPI(title="HelpDesk", version="1.0.0")
 
@@ -36,6 +36,7 @@ app.include_router(users.router)
 app.include_router(activity.router)
 app.include_router(chat.router)
 app.include_router(mail.router)
+app.include_router(translate.router)
 app.include_router(settings_router.router)
 
 

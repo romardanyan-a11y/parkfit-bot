@@ -365,6 +365,20 @@ class ConversationTask(Base):
     task = relationship("Task")
 
 
+class TranslationCache(Base):
+    """Cache of machine translations: each unique (text, target-language)
+    pair is translated once and then served from here."""
+
+    __tablename__ = "translation_cache"
+
+    id = Column(Integer, primary_key=True)
+    key_hash = Column(String(64), unique=True, index=True)  # sha256(target:text)
+    target_lang = Column(String(10))
+    detected_lang = Column(String(10), nullable=True)
+    translated = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class EmailCode(Base):
     """4-digit verification codes for confirming an email at registration."""
 

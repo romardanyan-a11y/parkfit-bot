@@ -31,7 +31,11 @@
     "requests": "注册申请",
     "settings": "外观设置",
     "notifications": "通知",
-    "logout": "退出登录"
+    "logout": "退出登录",
+    "translator": "翻译",
+    "translator_hint": "将他人的消息和任务翻译成界面语言",
+    "tr_on": "开",
+    "tr_off": "关"
   },
   "directory": {
     "title": "用户",

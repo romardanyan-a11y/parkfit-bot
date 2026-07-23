@@ -31,7 +31,11 @@
     "requests": "Registration requests",
     "settings": "Appearance settings",
     "notifications": "Notifications",
-    "logout": "Log out"
+    "logout": "Log out",
+    "translator": "Translator",
+    "translator_hint": "Translate other people's messages and tasks into your interface language",
+    "tr_on": "ON",
+    "tr_off": "OFF"
   },
   "directory": {
     "title": "Users",
