@@ -1,69 +1,64 @@
-# Выпуск HelpDesk в интернет: https://tracker-octron.ru (порт 443 совместно с VLESS/Xray)
+# HTTPS: https://tracker-octron.ru на отдельном IP 155.212.159.242
 
-Исходная ситуация на сервере:
-- `:443` слушает **Xray** (VLESS), не nginx;
-- `:80` — nginx-контейнер (`~/nginx-site`) с сайтом-заглушкой `alexalq.ru`
-  и прокси VPN-подписок (`/sub-alexalq/` → :2096);
-- HelpDesk крутится на `:8070`.
+План: HelpDesk получает собственный публичный IP (155.212.159.242), на котором
+никого нет. В compose добавлен сервис `proxy` (Caddy): он привязывается к
+портам 80/443 **только этого IP**, сам получает и автоматически продлевает
+сертификат Let's Encrypt и проксирует запросы в контейнер HelpDesk.
 
-Решение: nginx становится владельцем 443 и **SNI-диспетчером** (stream +
-`ssl_preread`): по имени домена трафик уходит либо в HelpDesk, либо в
-заглушку, либо прозрачно в Xray (VPN продолжает работать через 443).
-Конфиг: `nginx-sni.conf` (лежит рядом).
+Xray/VLESS (на *:443) и nginx-заглушка (на :80) **не трогаются вообще**:
+привязка к конкретному IP «перехватывает» только трафик 155.212.159.242,
+остальное продолжает идти как раньше.
 
-## Порядок (важно соблюдать очерёдность)
+## Шаги
 
-### 0. Домен
-Купить `tracker-octron.ru`, A-запись `@ -> 155.212.159.244` (и `www`, по желанию).
-Проверить: `ping tracker-octron.ru`.
-
-### 1. Сертификат (пока 443 не тронут)
-Порт 80 уже отдаёт ACME из webroot. На сервере:
+### 1. Проверить, что второй IP поднят на интерфейсе
 ```bash
-certbot certonly --webroot -w /ПУТЬ/К/ХОСТОВОМУ/webroot -d tracker-octron.ru
-# путь смотреть в volume-маппинге nginx-контейнера на /usr/share/nginx/html:
-#   docker inspect <nginx-container> --format '{{json .Mounts}}'
+ip a | grep 155.212.159.242
+```
+Если пусто — добавить IP в netplan (панель Selectel → инструкция «дополнительный
+IP») и `netplan apply`.
+
+### 2. Домен
+Купить `tracker-octron.ru`, A-запись: `@ -> 155.212.159.242`.
+Дождаться: `ping tracker-octron.ru` показывает .242.
+
+### 3. Обновить код и настроить .env
+```bash
+cd ~/SSH-reverce/parkfit-bot
+git fetch origin claude/help-desk-docker-system-scr5eq
+git reset --hard FETCH_HEAD
+cd helpdesk
+```
+В `helpdesk/.env` добавить (если строк нет):
+```
+PUBLIC_IP=155.212.159.242
+DOMAIN=tracker-octron.ru
 ```
 
-### 2. Перенести Xray с 443 на 8443
-В панели 3x-ui (`:2999`): inbound VLESS, поле **Port: 443 → 8443**, сохранить
-(панель перезапустит Xray). VPN-клиенты временно отвалятся — до шага 4.
-
-⚠️ Если inbound — REALITY и в поле dest/target указан `alexalq.ru:443` —
-поменять на `alexalq.ru:8445` (внутренний TLS-порт заглушки из нового конфига).
-Если там внешний сайт (yahoo.com и т.п.) — ничего не менять.
-
-### 3. Обновить nginx
-- `~/nginx-site/nginx.conf` заменить содержимым `nginx-sni.conf`;
-- в `~/nginx-site/docker-compose.yml` у nginx открыть 443:
-  ```yaml
-  ports:
-    - "80:80"
-    - "443:443"
-  ```
-- у контейнера должен быть `extra_hosts: ["host.docker.internal:host-gateway"]`
-  (он уже есть, раз работает прокси на :2096).
-
-### 4. Перезапуск
+### 4. Запуск
 ```bash
-cd ~/nginx-site && docker compose up -d --force-recreate
-docker logs <nginx-container> --tail 20   # не должно быть ошибок
+docker compose up -d --build
+docker logs helpdesk_proxy --tail 30   # должно быть "certificate obtained"
 ```
-Проверить:
-- `https://tracker-octron.ru` — HelpDesk с замком;
-- `https://alexalq.ru` — заглушка, `/sub-alexalq/` — подписки;
-- VPN-клиент подключается (по-прежнему на 443).
+Открыть: https://tracker-octron.ru — HelpDesk с замком.
 
-### 5. Донастройка HelpDesk
+### 5. После проверки
 - Админка → «Почтовый сервис» → «Адрес сайта» = `https://tracker-octron.ru`.
-- Спрятать 8070 от интернета: в `helpdesk/docker-compose.yml`
-  `ports: ["127.0.0.1:8070:8000"]` и `docker compose up -d`.
-- (опционально) закрыть 8443 снаружи файрволом — клиенты VPN ходят через 443.
+- Спрятать старый порт от интернета: в docker-compose.yml у сервиса web
+  `ports: ["127.0.0.1:${PORT:-8000}:8000"]`, затем `docker compose up -d`.
+  (Пока люди привыкают, можно оставить 8070 открытым.)
 
-### Откат (если что-то пошло не так)
-1. В 3x-ui вернуть порт inbound 8443 → 443.
-2. Вернуть старый `nginx.conf`, убрать 443 из ports, `docker compose up -d`.
+## Если Caddy не смог занять порт (EADDRINUSE)
 
-### Продление сертификатов
-`certbot renew` продлевает оба домена через webroot на :80 — ничего менять
-не нужно (проверить: `certbot renew --dry-run`).
+Редкий случай: система не даёт привязать 155.212.159.242:443 при живом *:443.
+Тогда одно изменение в 3x-ui: в настройках VLESS-инбаунда в поле
+**Listen IP** вписать `155.212.159.244` (вместо пустого/0.0.0.0), сохранить —
+Xray перестанет претендовать на чужой IP; затем `docker compose up -d` снова.
+Аналогично для nginx-заглушки, если 80-й не привяжется: в её compose
+`ports: ["155.212.159.244:80:80"]`.
+
+## Проверка после переезда
+- https://tracker-octron.ru — сайт с сертификатом;
+- VPN-клиент подключается как раньше (адрес .244);
+- https://alexalq.ru — заглушка и /sub-alexalq/ работают;
+- письма содержат ссылки на новый домен.
