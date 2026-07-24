@@ -23,28 +23,6 @@ services:
     volumes:
       - helpdesk_data:/data
 
-  # HTTPS-фронт на отдельном публичном IP (PUBLIC_IP в .env).
-  # Caddy сам получает и продлевает сертификат Let's Encrypt для DOMAIN.
-  # network_mode: host — слушаем PUBLIC_IP:80/443 напрямую, без docker-NAT:
-  # ответы уходят от имени хоста и корректно маршрутизируются политикой
-  # "from PUBLIC_IP -> eth1" (см. deploy/HTTPS.md).
-  proxy:
-    image: caddy:2
-    container_name: helpdesk_proxy
-    restart: unless-stopped
-    depends_on:
-      - web
-    network_mode: host
-    environment:
-      DOMAIN: ${DOMAIN:-tracker-octron.ru}
-      PUBLIC_IP: ${PUBLIC_IP:-0.0.0.0}
-      # web публикует порт на хосте, поэтому из host-сети он 127.0.0.1:PORT
-      UPSTREAM: 127.0.0.1:${PORT:-8000}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-
   # Optional PostgreSQL. To use it, set in .env:
   #   DATABASE_URL=postgresql+psycopg2://helpdesk:helpdesk@db:5432/helpdesk
   # and uncomment the "depends_on" above plus this service.
@@ -60,6 +38,4 @@ services:
 
 volumes:
   helpdesk_data:
-  caddy_data:
-  caddy_config:
   # helpdesk_pg:
