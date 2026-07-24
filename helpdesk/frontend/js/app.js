@@ -1009,7 +1009,7 @@ async function viewTaskDetail(main) {
         </div>
         <div class="side-block">
           <h4>${t("tasks.due_date")}</h4>
-          <input type="date" id="s-due" value="${task.due_date ? new Date(task.due_date).toISOString().slice(0, 10) : ""}" />
+          <input type="date" id="s-due" value="${task.due_date ? String(task.due_date).slice(0, 10) : ""}" />
         </div>
         <div class="side-block">
           <h4>${t("tasks.tags")}</h4>
