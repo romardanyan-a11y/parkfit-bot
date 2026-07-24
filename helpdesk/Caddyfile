@@ -1,6 +1,9 @@
 # HTTPS-фронт для HelpDesk (домен задаётся переменной DOMAIN в .env).
 # Caddy сам получает и автоматически продлевает сертификат Let's Encrypt.
+# Работает в host-сети и привязывается только к PUBLIC_IP, чтобы не мешать
+# другим службам на остальных адресах сервера.
 {$DOMAIN} {
+	bind {$PUBLIC_IP}
 	encode gzip
 
 	# вложения до 100 МБ (фото/видео в задачах и чате)
@@ -8,5 +11,5 @@
 		max_size 100MB
 	}
 
-	reverse_proxy web:8000
+	reverse_proxy {$UPSTREAM}
 }

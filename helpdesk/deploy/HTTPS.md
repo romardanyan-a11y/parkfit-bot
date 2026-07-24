@@ -1,64 +1,87 @@
 # HTTPS: https://tracker-octron.ru на отдельном IP 155.212.159.242
 
-План: HelpDesk получает собственный публичный IP (155.212.159.242), на котором
-никого нет. В compose добавлен сервис `proxy` (Caddy): он привязывается к
-портам 80/443 **только этого IP**, сам получает и автоматически продлевает
-сертификат Let's Encrypt и проксирует запросы в контейнер HelpDesk.
+HelpDesk живёт на собственном публичном IP (155.212.159.242, интерфейс eth1).
+Сервис `proxy` (Caddy) работает в host-сети, привязан **только** к этому IP
+на портах 80/443, сам получает и продлевает сертификат Let's Encrypt и
+проксирует запросы в HelpDesk (127.0.0.1:PORT).
 
-Xray/VLESS (на *:443) и nginx-заглушка (на :80) **не трогаются вообще**:
-привязка к конкретному IP «перехватывает» только трафик 155.212.159.242,
-остальное продолжает идти как раньше.
+Xray/VLESS и nginx-заглушка живут на основном IP .244 и не затрагиваются:
+- nginx-заглушка привязана к `155.212.159.244:80`;
+- у VLESS-инбаунда в 3x-ui поле Listen IP = `155.212.159.244`.
 
-## Шаги
+## Ключевой момент: policy-маршрутизация
 
-### 1. Проверить, что второй IP поднят на интерфейсе
+Сервер ходит в интернет по умолчанию через eth0, а .242 висит на eth1.
+Без отдельного правила ответы с адреса .242 уходят через eth0 и
+отбрасываются провайдером (анти-спуфинг). Нужно правило
+«всё с адреса .242 — через eth1»:
+
 ```bash
-ip a | grep 155.212.159.242
+ip route add default via 155.212.159.241 dev eth1 table 100
+ip rule add from 155.212.159.242 table 100
 ```
-Если пусто — добавить IP в netplan (панель Selectel → инструкция «дополнительный
-IP») и `netplan apply`.
 
-### 2. Домен
-Купить `tracker-octron.ru`, A-запись: `@ -> 155.212.159.242`.
-Дождаться: `ping tracker-octron.ru` показывает .242.
-
-### 3. Обновить код и настроить .env
+Проверка, что путь работает (с самого сервера):
 ```bash
-cd ~/SSH-reverce/parkfit-bot
-git fetch origin claude/help-desk-docker-system-scr5eq
-git reset --hard FETCH_HEAD
-cd helpdesk
+curl --interface 155.212.159.242 -sI https://ya.ru | head -1   # HTTP/2 ...
 ```
-В `helpdesk/.env` добавить (если строк нет):
+
+Именно поэтому Caddy запущен с `network_mode: host`: его ответы уходят от
+имени хоста с адресом .242 и попадают под это правило. Вариант с обычной
+публикацией портов (docker-NAT) не работает: в момент выбора маршрута у
+ответного пакета ещё внутренний адрес контейнера, правило не срабатывает,
+и ответ уезжает в eth0.
+
+### Сделать правило постоянным (netplan)
+
+В файле netplan (например `/etc/netplan/50-cloud-init.yaml`) в секции `eth1`:
+
+```yaml
+    eth1:
+      addresses:
+        - 155.212.159.242/29
+      routes:
+        - to: 0.0.0.0/0
+          via: 155.212.159.241
+          table: 100
+      routing-policy:
+        - from: 155.212.159.242
+          table: 100
+```
+
+Затем `netplan apply` и проверить: `ip rule` содержит
+`from 155.212.159.242 lookup 100`.
+
+## Развёртывание
+
+`.env` (helpdesk/.env):
 ```
 PUBLIC_IP=155.212.159.242
 DOMAIN=tracker-octron.ru
+PORT=8070
 ```
 
-### 4. Запуск
+DNS: A-запись `tracker-octron.ru -> 155.212.159.242`.
+
+Запуск:
 ```bash
-docker compose up -d --build
-docker logs helpdesk_proxy --tail 30   # должно быть "certificate obtained"
+cd ~/helpdesk/parkfit-bot
+git fetch origin claude/help-desk-docker-system-scr5eq && git reset --hard FETCH_HEAD
+cd helpdesk
+docker compose up -d --force-recreate proxy
+docker logs helpdesk_proxy --tail 20 -f   # ждать "certificate obtained successfully"
 ```
-Открыть: https://tracker-octron.ru — HelpDesk с замком.
-
-### 5. После проверки
-- Админка → «Почтовый сервис» → «Адрес сайта» = `https://tracker-octron.ru`.
-- Спрятать старый порт от интернета: в docker-compose.yml у сервиса web
-  `ports: ["127.0.0.1:${PORT:-8000}:8000"]`, затем `docker compose up -d`.
-  (Пока люди привыкают, можно оставить 8070 открытым.)
-
-## Если Caddy не смог занять порт (EADDRINUSE)
-
-Редкий случай: система не даёт привязать 155.212.159.242:443 при живом *:443.
-Тогда одно изменение в 3x-ui: в настройках VLESS-инбаунда в поле
-**Listen IP** вписать `155.212.159.244` (вместо пустого/0.0.0.0), сохранить —
-Xray перестанет претендовать на чужой IP; затем `docker compose up -d` снова.
-Аналогично для nginx-заглушки, если 80-й не привяжется: в её compose
-`ports: ["155.212.159.244:80:80"]`.
 
 ## Проверка после переезда
 - https://tracker-octron.ru — сайт с сертификатом;
 - VPN-клиент подключается как раньше (адрес .244);
-- https://alexalq.ru — заглушка и /sub-alexalq/ работают;
-- письма содержат ссылки на новый домен.
+- http://alexalq.ru — заглушка и /sub-alexalq/ работают;
+- Админка → «Почтовый сервис» → «Адрес сайта» = `https://tracker-octron.ru`.
+
+## Возможные ошибки
+- В логах Caddy `bind: address already in use` на 443 — значит Xray снова
+  слушает `*:443`: в 3x-ui у инбаунда выставить Listen IP `155.212.159.244`
+  и перезапустить (`systemctl restart x-ui`); проверка:
+  `ss -tlnp | grep ':443'` не должен показывать `*:443`.
+- `Timeout during connect` от Let's Encrypt — не применена
+  policy-маршрутизация (см. выше), проверить `ip rule` и таблицу 100.

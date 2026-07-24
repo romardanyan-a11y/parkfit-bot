@@ -25,17 +25,21 @@ services:
 
   # HTTPS-фронт на отдельном публичном IP (PUBLIC_IP в .env).
   # Caddy сам получает и продлевает сертификат Let's Encrypt для DOMAIN.
+  # network_mode: host — слушаем PUBLIC_IP:80/443 напрямую, без docker-NAT:
+  # ответы уходят от имени хоста и корректно маршрутизируются политикой
+  # "from PUBLIC_IP -> eth1" (см. deploy/HTTPS.md).
   proxy:
     image: caddy:2
     container_name: helpdesk_proxy
     restart: unless-stopped
     depends_on:
       - web
+    network_mode: host
     environment:
       DOMAIN: ${DOMAIN:-tracker-octron.ru}
-    ports:
-      - "${PUBLIC_IP:-0.0.0.0}:80:80"
-      - "${PUBLIC_IP:-0.0.0.0}:443:443"
+      PUBLIC_IP: ${PUBLIC_IP:-0.0.0.0}
+      # web публикует порт на хосте, поэтому из host-сети он 127.0.0.1:PORT
+      UPSTREAM: 127.0.0.1:${PORT:-8000}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
