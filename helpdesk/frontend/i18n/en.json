@@ -132,6 +132,7 @@
     "type": "Type",
     "assignee": "Assignee",
     "due_date": "Due date",
+    "overdue": "Overdue",
     "status": "Status",
     "take": "Take into work",
     "archive": "Archive",

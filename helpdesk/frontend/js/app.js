@@ -114,6 +114,45 @@ function fmtDay(s) {
   return d.toLocaleDateString(localeCode(), { timeZone: "Europe/Moscow", day: "2-digit", month: "short", year: "numeric" });
 }
 
+// ---------- Deadline heat ----------
+// A due date is a whole day, so the deadline is that day's end in Moscow
+// (23:59:59 MSK = 20:59:59 UTC). The date part is taken as typed, without any
+// timezone shifting, so the day never slides by one.
+function dueDeadline(s) {
+  if (!s) return null;
+  const ms = Date.parse(String(s).slice(0, 10) + "T20:59:59Z");
+  return isNaN(ms) ? null : ms;
+}
+
+// "ok" — more than 3 days left, "warn" — 3 days or less, "hot" — under 12
+// hours or already overdue, "done" — the task is resolved, nothing burns.
+function dueState(task) {
+  if (!task || !task.due_date) return null;
+  if (task.status === "resolved" || task.status === "closed") return "done";
+  const dl = dueDeadline(task.due_date);
+  if (dl == null) return null;
+  const left = dl - Date.now();
+  if (left <= 12 * 3600 * 1000) return "hot";
+  if (left <= 3 * 24 * 3600 * 1000) return "warn";
+  return "ok";
+}
+
+function duePill(task) {
+  const st = dueState(task);
+  if (!st) return "—";
+  const overdue = st === "hot" && dueDeadline(task.due_date) < Date.now();
+  const title = overdue ? ` title="${t("tasks.overdue")}"` : "";
+  return `<span class="due-pill due-${st}"${title}>${fmtDay(task.due_date)}</span>`;
+}
+
+// Burning tasks (under 12 hours) float to the top, the most urgent first.
+function sortByHeat(tasks) {
+  const hot = [], rest = [];
+  tasks.forEach((x) => (dueState(x) === "hot" ? hot : rest).push(x));
+  hot.sort((a, b) => dueDeadline(a.due_date) - dueDeadline(b.due_date));
+  return hot.concat(rest);
+}
+
 // Resolve the name to show for a user: a personal alias (if set + enabled)
 // overrides the real name, but only for the person who created that alias.
 function displayName(u) {
@@ -760,15 +799,15 @@ function taskTable(tasks) {
         <th>${t("tasks.key")}</th><th>${t("tasks.task_title")}</th><th>${t("tasks.created")}</th><th>${t("tasks.status")}</th>
         <th>${t("tasks.priority")}</th><th>${t("tasks.assignee")}</th><th>${t("tasks.due_date")}</th>
       </tr></thead>
-      <tbody>${tasks.map((task) => `
-        <tr data-task="${task.id}">
+      <tbody>${sortByHeat(tasks).map((task) => `
+        <tr data-task="${task.id}"${dueState(task) === "hot" ? ' class="task-hot"' : ""}>
           <td class="mono" data-label="${t("tasks.key")}">${esc(task.key)}${actDot(state.activity.tasks[task.id], "taskdot-" + task.id)}</td>
           <td data-label="${t("tasks.task_title")}"><span data-tr>${esc(task.title)}</span>${tagChips(task.tags)}</td>
           <td data-label="${t("tasks.created")}">${fmtDate(task.created_at)}</td>
           <td data-label="${t("tasks.status")}"><span class="badge st-${task.status}">${t("status." + task.status)}</span></td>
           <td data-label="${t("tasks.priority")}"><span class="pr-${task.priority}">${t("priority." + task.priority)}</span></td>
           <td data-label="${t("tasks.assignee")}">${task.assignee ? userLabel(task.assignee) : `<span class="muted">${t("tasks.unassigned")}</span>`}</td>
-          <td data-label="${t("tasks.due_date")}">${task.due_date ? fmtDay(task.due_date) : "—"}</td>
+          <td data-label="${t("tasks.due_date")}">${duePill(task)}</td>
         </tr>`).join("")}
       </tbody>
     </table></div>`;

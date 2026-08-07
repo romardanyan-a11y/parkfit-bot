@@ -132,6 +132,7 @@
     "type": "类型",
     "assignee": "负责人",
     "due_date": "截止日期",
+    "overdue": "已逾期",
     "status": "状态",
     "take": "接受任务",
     "archive": "归档",
