@@ -829,7 +829,7 @@ async function openTaskModal(dep, allTags) {
     <h3>${t("tasks.new_task")}</h3>
     <div class="field"><label>${t("tasks.task_title")}</label><input id="t-title" /></div>
     <div class="field"><label>${t("tasks.task_desc")}</label><textarea id="t-desc"></textarea></div>
-    <div class="field"><label>${t("tasks.attachments")}</label><input type="file" id="t-files" multiple accept="image/*,video/*,*/*" /></div>
+    <div class="field"><label>${t("tasks.attachments")}</label><input type="file" id="t-files" multiple /></div>
     <div class="row">
       <div class="field"><label>${t("tasks.priority")}</label>
         <select id="t-prio">${PRIORITIES.map((p) => `<option value="${p}" ${p === "normal" ? "selected" : ""}>${t("priority." + p)}</option>`).join("")}</select></div>
@@ -999,7 +999,7 @@ async function viewTaskDetail(main) {
           <div style="margin-top:12px">
             <textarea id="c-body" placeholder="${t("tasks.add_comment")}"></textarea>
             <div class="add-inline" style="margin-top:8px">
-              <input type="file" id="c-files" multiple accept="image/*,video/*,*/*" />
+              <input type="file" id="c-files" multiple />
               <button class="btn small" id="c-send">${t("tasks.send")}</button>
             </div>
           </div>
@@ -1008,7 +1008,7 @@ async function viewTaskDetail(main) {
         <div class="section">
           <h4>${t("tasks.attachments")}</h4>
           <div id="attachments">${renderAttachments((task.attachments || []).filter((a) => !a.comment_id))}</div>
-          <div style="margin-top:10px"><input type="file" id="a-file" multiple accept="image/*,video/*,*/*" /></div>
+          <div style="margin-top:10px"><input type="file" id="a-file" multiple /></div>
         </div>
 
         <div class="section">
@@ -1245,8 +1245,14 @@ function attViewUrl(a) {
 function fmtSize(b) {
   return b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : (b / 1024).toFixed(0) + " KB";
 }
-function isImage(a) { return (a.content_type || "").startsWith("image/"); }
-function isVideo(a) { return (a.content_type || "").startsWith("video/"); }
+// Only formats the browser can actually render get an inline preview; every
+// other type (dwg, tiff, psd, exotic codecs...) falls back to a document card
+// instead of a broken thumbnail. Attaching them is not restricted in any way.
+const VIEWABLE_IMAGE = ["image/jpeg", "image/pjpeg", "image/png", "image/gif", "image/webp",
+  "image/bmp", "image/avif", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"];
+const VIEWABLE_VIDEO = ["video/mp4", "video/webm", "video/ogg", "video/quicktime"];
+function isImage(a) { return VIEWABLE_IMAGE.includes((a.content_type || "").toLowerCase()); }
+function isVideo(a) { return VIEWABLE_VIDEO.includes((a.content_type || "").toLowerCase()); }
 
 // Render attachments as messenger-style cards: a preview (image / playable
 // video / document icon) plus a footer with the file name, size and a
