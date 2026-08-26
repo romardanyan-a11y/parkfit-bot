@@ -36,7 +36,11 @@ async function translateNodes(root) {
         target: I18N.lang,
         items: chunk.map((n, i) => ({ id: String(i), text: n.dataset.orig })),
       });
+      const failed = new Set(r.failed || []);
       chunk.forEach((n, i) => {
+        // A text the service could not handle stays unmarked, so the next
+        // render tries it again instead of freezing the original forever.
+        if (failed.has(String(i))) return;
         const tr = r.translations[String(i)];
         if (tr && tr !== n.dataset.orig) {
           n.textContent = tr;
@@ -44,8 +48,22 @@ async function translateNodes(root) {
         }
         n.dataset.trlang = I18N.lang;
       });
-    } catch (e) { break; }
+      if (failed.size) { trNotice(); break; }
+    } catch (e) { trNotice(); break; }
   }
+}
+
+// Tell the user once per session when the translation service is unreachable —
+// silently showing the untranslated text just looks like a broken feature.
+let trNoticeShown = false;
+function trNotice() {
+  if (trNoticeShown) return;
+  trNoticeShown = true;
+  const box = document.createElement("div");
+  box.className = "tr-toast";
+  box.textContent = t("nav.translator_offline");
+  document.body.appendChild(box);
+  setTimeout(() => box.remove(), 6000);
 }
 
 function toggleTranslator() {

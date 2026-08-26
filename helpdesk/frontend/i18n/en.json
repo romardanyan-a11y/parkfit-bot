@@ -34,6 +34,7 @@
     "logout": "Log out",
     "translator": "Translator",
     "translator_hint": "Translate other people's messages and tasks into your interface language",
+    "translator_offline": "The translation service is unavailable right now, showing the original text",
     "tr_on": "ON",
     "tr_off": "OFF"
   },

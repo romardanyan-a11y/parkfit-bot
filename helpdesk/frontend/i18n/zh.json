@@ -34,6 +34,7 @@
     "logout": "退出登录",
     "translator": "翻译",
     "translator_hint": "将他人的消息和任务翻译成界面语言",
+    "translator_offline": "翻译服务暂时不可用，显示原文",
     "tr_on": "开",
     "tr_off": "关"
   },
