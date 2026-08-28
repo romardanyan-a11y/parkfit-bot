@@ -50,12 +50,16 @@ rpt/
 │           ├── app.js
 │           └── style.css
 │
-└── robot/                     Проект робота (docker-compose)
-    ├── docker-compose.yml     Один сервис: tunnel (network_mode: host)
-    ├── Dockerfile             autossh + openssh-client + curl
-    ├── entrypoint.sh          Держит обратный туннель + heartbeat
+└── robot/                     Компоненты робота (нативно, systemd — БЕЗ Docker)
+    ├── run-tunnel.sh          Держит обратный туннель autossh + heartbeat
+    ├── rpt-tunnel.service     systemd-юнит службы туннеля
     └── rptctl                 Консоль управления роботом (sync/status/logs...)
 ```
+
+> **Почему робот без Docker.** На части VPS (LXC/OpenVZ) Docker не может запускать
+> контейнеры (ошибка `bpf_prog_query(BPF_CGROUP_DEVICE)`). Роботу Docker и не
+> нужен — это один процесс `autossh`, поэтому он запускается нативно под systemd.
+> Сервер по-прежнему в Docker.
 
 ---
 
@@ -73,7 +77,8 @@ rpt/
 ### На роботе
 | Путь | Что это |
 |------|---------|
-| `/opt/rpt-robot/`             | docker-compose проект туннеля |
+| `/opt/rpt-robot/run-tunnel.sh` | скрипт запуска туннеля (autossh + heartbeat) |
+| `/etc/systemd/system/rpt-tunnel.service` | systemd-служба туннеля |
 | `/etc/rpt-robot/robot.env`    | статический конфиг (SN, имя, адрес сервера, порты) |
 | `/etc/rpt-robot/runtime.env`  | результат сопряжения (порт, host-ключ хаба, токен) |
 | `/etc/rpt-robot/tunnel_key`   | приватный туннельный ключ робота |
@@ -203,10 +208,11 @@ sudo bash robot-install.sh
 
 ## 8. Как это работает под капотом
 
-1. **Обратный туннель.** На роботе `autossh` держит соединение
-   `ssh -R 0.0.0.0:<порт>:localhost:22 rtunnel@<сервер>` до хаба. Контейнер
-   робота работает в `network_mode: host`, поэтому `localhost:22` — это `sshd`
-   самого робота. Хаб слушает назначенный порт и переадресует его на робота.
+1. **Обратный туннель.** На роботе `autossh` (нативная служба systemd
+   `rpt-tunnel`) держит соединение
+   `ssh -R 0.0.0.0:<порт>:localhost:22 rtunnel@<сервер>` до хаба. Служба работает
+   прямо на хосте, поэтому `localhost:22` — это `sshd` самого робота. Хаб слушает
+   назначенный порт и переадресует его на робота.
 
 2. **Хаб (`server/hub`).** Отдельный `sshd`, принимающий **только** обратные
    туннели от пользователя `rtunnel`. `authorized_keys` формирует backend: по
@@ -263,8 +269,10 @@ sudo bash robot-install.sh
 
 ## 11. Требования
 
-- **Сервер и роботы:** Linux с Docker + docker compose v2 (ставится автоматически).
-- **Роботы:** установленный `openssh-server` (ставится автоматически).
+- **Сервер:** Linux с Docker + docker compose v2 (ставится автоматически).
+- **Роботы:** Docker НЕ нужен. Ставятся `autossh`, `openssh-server/client`,
+  `curl`, `jq` (автоматически) + systemd. Работает и на VPS (LXC/OpenVZ), где
+  Docker недоступен.
 - **Браузер администратора:** доступ в интернет для загрузки xterm.js с CDN
   (jsdelivr). Для полностью офлайн-среды положите файлы xterm рядом в `static/`
   и поправьте ссылки в `index.html`.

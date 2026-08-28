@@ -1,0 +1,15 @@
+[Unit]
+Description=RPT reverse SSH tunnel (robot -> central server)
+After=network-online.target sshd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/rpt-robot/run-tunnel.sh
+Restart=always
+RestartSec=5
+# автоперезапуск при любом падении туннеля
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target
